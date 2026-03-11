@@ -79,24 +79,38 @@
 
             <!-- Shutter Speed / Exposure Time -->
             <div class="control-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <div class="control-label" style="display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" id="shutter-toggle" title="Ativar manual"> Shutter Speed
-                        <small style="display: block;">Reduz motion blur (Tempo de exposição)</small>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="control-label">
+                        Shutter Speed
+                        <small style="display: block;">Reduz motion blur</small>
                     </div>
-                    <div class="control-value" id="shutter-val">Auto</div>
+                    <label class="switch">
+                        <input type="checkbox" id="shutter-toggle" title="Ativar manual">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <small style="color: #bbb;">Modo de operação:</small>
+                    <div class="control-value" id="shutter-val" style="font-weight: bold; color: var(--primary);">Auto</div>
                 </div>
                 <input type="range" id="shutter-slider" min="0" max="1000" step="1" value="120" disabled>
             </div>
 
             <!-- ISO -->
             <div class="control-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <div class="control-label" style="display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" id="iso-toggle" title="Ativar manual"> ISO
-                        <small style="display: block;">Compensa o escuro do shutter</small>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="control-label">
+                        ISO (Ganho)
+                        <small style="display: block;">Compensação de luz</small>
                     </div>
-                    <div class="control-value" id="iso-val">Auto</div>
+                    <label class="switch">
+                        <input type="checkbox" id="iso-toggle" title="Ativar manual">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <small style="color: #bbb;">Modo de operação:</small>
+                    <div class="control-value" id="iso-val" style="font-weight: bold; color: var(--primary);">Auto</div>
                 </div>
                 <input type="range" id="iso-slider" min="0" max="3200" step="10" value="800" disabled>
             </div>
