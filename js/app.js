@@ -22,6 +22,12 @@ const leveler = document.getElementById('leveler');
 const horizonToggle = document.getElementById('horizon-toggle');
 const zoomSlider = document.getElementById('zoom-slider');
 const zoomVal = document.getElementById('zoom-val');
+const shutterToggle = document.getElementById('shutter-toggle');
+const shutterSlider = document.getElementById('shutter-slider');
+const shutterVal = document.getElementById('shutter-val');
+const isoToggle = document.getElementById('iso-toggle');
+const isoSlider = document.getElementById('iso-slider');
+const isoVal = document.getElementById('iso-val');
 const btnFlipCamera = document.getElementById('btn-flip-camera');
 const debugInfo = document.getElementById('debug-info');
 const camDebugInfo = document.getElementById('cam-debug-info');
@@ -35,6 +41,11 @@ let currentRoll = 0; // The angle of device tilt
 let isHorizonLockActive = horizonToggle.checked;
 let isOisLockActive = document.getElementById('ois-toggle').checked;
 let zoomFactor = parseFloat(zoomSlider.value);
+
+let isShutterManual = false;
+let shutterValue = parseInt(shutterSlider.value);
+let isIsoManual = false;
+let isoValue = parseInt(isoSlider.value);
 let animationId;
 
 let videoDevices = [];
