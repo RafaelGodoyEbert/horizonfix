@@ -293,10 +293,8 @@ async function applyManualSettings() {
         if (hasChanges) {
             try {
                 await track.applyConstraints({ advanced: [advancedConstraints] });
-                camDebugInfo.innerHTML += ` | Man.Settings Applied`;
             } catch (e) {
                 console.warn("Failed to apply advanced camera settings:", e);
-                camDebugInfo.innerHTML += ` | Man.Settings Fail`;
             }
         }
         
