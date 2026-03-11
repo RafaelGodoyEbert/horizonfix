@@ -78,7 +78,7 @@
             </div>
 
             <!-- Shutter Speed / Exposure Time -->
-            <div class="control-card">
+            <div class="control-card" style="pointer-events: auto; position: relative; z-index: 50;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <div class="control-label">
                         Shutter Speed
@@ -93,11 +93,11 @@
                     <small style="color: #bbb;">Modo de operação:</small>
                     <div class="control-value" id="shutter-val" style="font-weight: bold; color: var(--primary);">Auto</div>
                 </div>
-                <input type="range" id="shutter-slider" min="0" max="1000" step="1" value="120" disabled>
+                <input type="range" id="shutter-slider" min="1" max="1000" step="1" value="120" disabled style="pointer-events: auto;">
             </div>
 
             <!-- ISO -->
-            <div class="control-card">
+            <div class="control-card" style="pointer-events: auto; position: relative; z-index: 50;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <div class="control-label">
                         ISO (Ganho)
@@ -112,7 +112,7 @@
                     <small style="color: #bbb;">Modo de operação:</small>
                     <div class="control-value" id="iso-val" style="font-weight: bold; color: var(--primary);">Auto</div>
                 </div>
-                <input type="range" id="iso-slider" min="0" max="3200" step="10" value="800" disabled>
+                <input type="range" id="iso-slider" min="50" max="3200" step="10" value="800" disabled style="pointer-events: auto;">
             </div>
 
             <!-- Horizon Lock Toggle -->
