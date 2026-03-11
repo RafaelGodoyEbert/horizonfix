@@ -2,10 +2,44 @@
 // sensors.js — Device orientation handling and angle math
 // ============================================================
 
-// Process sensor data — gravity projection for screen roll
+let hasValidMotionData = false;
+
+// Process sensor data using DeviceMotion (Acceleration with Gravity)
+// This avoids the Gimbal Lock that occurs at beta=90 with Euler angles.
+function handleMotion(event) {
+    if (event.accelerationIncludingGravity) {
+        const ax = event.accelerationIncludingGravity.x;
+        const ay = event.accelerationIncludingGravity.y;
+        
+        if (ax !== null && ay !== null) {
+            hasValidMotionData = true;
+            sensorEventCount++;
+            lastBeta = ax; // Reusing debug variables to show raw G force
+            lastGamma = ay;
+
+            // Compute roll directly from gravity vector components on the screen plane
+            // Since we want standard roll, we use atan2.
+            // Depending on the device, X and Y might need swapping or negating to match the previous Euler calculation.
+            // In Android Chrome: X is right, Y is top.
+            let roll = Math.atan2(ax, ay) * 180 / Math.PI;
+            if (isNaN(roll)) roll = 0;
+
+            let orientation = screen.orientation && screen.orientation.angle !== undefined
+                ? screen.orientation.angle
+                : (window.orientation || 0);
+            if (isNaN(orientation)) orientation = 0;
+
+            targetRoll = -(roll - orientation);
+        }
+    }
+}
+
+// Fallback: Process sensor data using DeviceOrientation Euler angles
 // atan2(sin(g)*cos(b), sin(b)) extracts the exact roll angle
 // from deviceorientation beta/gamma values at any phone position.
 function handleOrientation(event) {
+    if (hasValidMotionData) return; // Prioritize devicemotion!
+    
     if (event.beta === null || event.gamma === null) return;
 
     sensorEventCount++;

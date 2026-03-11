@@ -93,6 +93,15 @@ btnStart.addEventListener('click', async () => {
         } catch (error) {
             console.error("Erro ao pedir permissão de sensor", error);
         }
+
+        // Also try for DeviceMotionEvent
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                await DeviceMotionEvent.requestPermission();
+            } catch (error) {
+                console.error("Erro ao pedir permissão de devicemotion", error);
+            }
+        }
     }
 
     // Request sensor permissions for Chrome Android (Permissions API)
@@ -108,6 +117,7 @@ btnStart.addEventListener('click', async () => {
     if ('ondeviceorientationabsolute' in window) {
         window.addEventListener('deviceorientationabsolute', handleOrientation, true);
     }
+    window.addEventListener('devicemotion', handleMotion, true);
 
     // Hide overlay
     startOverlay.style.opacity = '0';
