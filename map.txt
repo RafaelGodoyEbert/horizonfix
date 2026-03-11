@@ -1,0 +1,122 @@
+================================================================================
+                     HORIZONFIX — Project File Map
+================================================================================
+
+Estrutura criada pela refatoração do index.html monolítico em arquivos
+separados para facilitar manutenção e edição por IA.
+
+ANTES: 1 arquivo (index.html, 1570 linhas, 63KB)
+DEPOIS: 1 HTML + 1 CSS + 7 JS = 10 arquivos
+
+================================================================================
+ESTRUTURA commit 2512ac5
+================================================================================
+
+horizonfix/
+├── index.html              HTML principal (estrutura e markup apenas)
+├── map.txt                 Este arquivo — mapa do projeto
+│
+├── css/
+│   └── styles.css          Todo o CSS da aplicação (~575 linhas)
+│                           - Variáveis CSS (:root)
+│                           - Reset e layout global
+│                           - Top bar, status badge, indicator dot
+│                           - Leveler/crosshair overlay
+│                           - Controls panel e settings toggle
+│                           - Toggle switch e range slider
+│                           - Start overlay
+│                           - Focus square e animações
+│                           - Botões (primary, record)
+│                           - Recording time display
+│                           - Camera select dropdown
+│
+└── js/
+    ├── app.js              [CARREGADO POR ÚLTIMO] Ponto de entrada (~110 linhas)
+    │                       - Todas as variáveis globais (video, canvas, ctx, etc.)
+    │                       - Referências DOM (getElementById)
+    │                       - Estado da aplicação (currentRoll, zoomFactor, etc.)
+    │                       - fixViewportHeight()
+    │                       - Inicialização (btnStart click → permissões → câmera → draw)
+    │
+    ├── ui.js               Event listeners de controles da UI (~35 linhas)
+    │                       - horizonToggle change → liga/desliga estabilização
+    │                       - zoomSlider input → ajusta zoom
+    │                       - ois-toggle change → liga/desliga OIS hardware
+    │                       - settingsToggle click → expande/colapsa painel
+    │
+    ├── sensors.js          Processamento de orientação do dispositivo (~45 linhas)
+    │                       - handleOrientation() — converte beta/gamma em roll angle
+    │                       - lerpAngle() — interpolação angular suave
+    │
+    ├── focus.js            Touch-to-focus e AE/AF Lock (~140 linhas)
+    │                       - clearFocusTimers()
+    │                       - triggerFocus() — aplica foco e exposição no hardware
+    │                       - Pointer events (down/up/move/cancel) para tap e long-press
+    │
+    ├── camera.js           Gerenciamento de câmeras (~210 linhas)
+    │                       - getCameras() — enumera lentes, detecta tipo (wide/ultrawide)
+    │                       - startCamera() — inicia stream com fallback chain
+    │                       - Heurísticas de detecção Samsung/Pixel
+    │                       - Configuração de AF/AE/WB contínuos
+    │
+    ├── recording.js        Gravação de vídeo (~170 linhas)
+    │                       - startRecording() — configura MediaRecorder + canvas
+    │                       - stopRecording() — para e salva
+    │                       - updateRecordingTime() — atualiza timer na tela
+    │                       - saveVideo() — fix-webm-duration + download
+    │
+    └── renderer.js         Renderização no canvas (~100 linhas)
+                            - renderToCtx() — desenha frame com rotação e zoom
+                            - draw() — loop principal (requestAnimationFrame)
+                            - FPS counter e debug overlay
+
+================================================================================
+ORDEM DE CARREGAMENTO DOS SCRIPTS (importante!)
+================================================================================
+
+1. fix-webm-duration.js (CDN, no <head>)
+2. js/app.js         ← Define TODAS as variáveis globais primeiro
+3. js/ui.js          ← Usa: horizonToggle, zoomSlider, settingsToggle, etc.
+4. js/sensors.js     ← Usa: sensorEventCount, lastBeta, lastGamma, targetRoll
+5. js/focus.js       ← Usa: canvas, currentStream, focusPointUI, focusSquare, camDebugInfo
+6. js/camera.js      ← Usa: video, currentStream, videoDevices, camDebugInfo, sensorDot
+7. js/recording.js   ← Usa: recCanvas, recCtx, isRecording, mediaRecorder, wakeLock
+8. js/renderer.js    ← Usa: video, canvas, ctx, currentRoll, isHorizonLockActive, etc.
+
+NOTA: app.js é carregado PRIMEIRO (não por último como no plano original)
+      porque define todas as variáveis globais que os outros scripts precisam.
+      A inicialização real só acontece quando o usuário clica "Ativar Câmera",
+      então a ordem de definição vs execução não é problema.
+
+================================================================================
+DEPENDÊNCIAS ENTRE ARQUIVOS (variáveis globais compartilhadas)
+================================================================================
+
+app.js     → Define: video, canvas, ctx, recCanvas, recCtx, currentRoll,
+              isHorizonLockActive, isOisLockActive, zoomFactor, videoDevices,
+              currentDeviceId, currentStream, mediaRecorder, recordedChunks,
+              isRecording, targetRoll, sensorEventCount, lastBeta, lastGamma,
+              fpsFrameCount, fpsLastTime, fpsDisplay, wakeLock,
+              + todas as referências DOM (angleText, sensorDot, etc.)
+
+ui.js      → Lê/escreve: isHorizonLockActive, isOisLockActive, zoomFactor
+              Chama: startCamera()
+
+sensors.js → Lê/escreve: sensorEventCount, lastBeta, lastGamma, targetRoll
+
+focus.js   → Lê: currentStream, canvas
+              Escreve: focusPointUI, focusSquare
+
+camera.js  → Lê/escreve: currentStream, currentDeviceId, videoDevices
+              Lê: isOisLockActive, video, sensorDot, camDebugInfo
+
+recording.js → Lê/escreve: isRecording, mediaRecorder, recordedChunks,
+                recordingStartTime, recordingInterval, wakeLock
+                Lê: recCanvas, recCtx, camDebugInfo
+
+renderer.js → Lê: video, canvas, ctx, recCanvas, recCtx, currentRoll,
+               isHorizonLockActive, zoomFactor, isRecording,
+               fpsFrameCount, fpsLastTime, fpsDisplay, sensorEventCount,
+               lastBeta, lastGamma, debugInfo, angleText, horizonLine
+
+================================================================================

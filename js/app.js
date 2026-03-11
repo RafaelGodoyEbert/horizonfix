@@ -1,0 +1,114 @@
+// ============================================================
+// app.js — Global variables, DOM references, and initialization
+// This file must be loaded LAST (depends on all other modules)
+// ============================================================
+
+const video = document.getElementById('video-source');
+const canvas = document.getElementById('viewfinder');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+
+// Hidden canvas strictly for recording keeping standard video aspect ratio
+const recCanvas = document.createElement('canvas');
+const recCtx = recCanvas.getContext('2d', { alpha: false, desynchronized: true });
+
+const startOverlay = document.getElementById('start-overlay');
+const btnStart = document.getElementById('btn-start');
+
+const angleText = document.getElementById('angle-text');
+const sensorDot = document.getElementById('sensor-dot');
+const horizonLine = document.getElementById('horizon-line');
+const leveler = document.getElementById('leveler');
+
+const horizonToggle = document.getElementById('horizon-toggle');
+const zoomSlider = document.getElementById('zoom-slider');
+const zoomVal = document.getElementById('zoom-val');
+const btnFlipCamera = document.getElementById('btn-flip-camera');
+const debugInfo = document.getElementById('debug-info');
+const camDebugInfo = document.getElementById('cam-debug-info');
+const settingsToggle = document.getElementById('settings-toggle');
+const controlsPanel = document.getElementById('controls-panel');
+const focusSquare = document.getElementById('focus-square');
+const focusPointUI = document.getElementById('focus-point');
+let focusTimer;
+
+let currentRoll = 0; // The angle of device tilt
+let isHorizonLockActive = horizonToggle.checked;
+let isOisLockActive = document.getElementById('ois-toggle').checked;
+let zoomFactor = parseFloat(zoomSlider.value);
+let animationId;
+
+let videoDevices = [];
+let currentDeviceId = null;
+let currentStream = null;
+
+// Recording Variables
+let mediaRecorder;
+let recordedChunks = [];
+let isRecording = false;
+let recordingStartTime;
+let recordingInterval;
+
+// Smoothening variables for sensor data
+let targetRoll = 0;
+let sensorEventCount = 0;
+let lastBeta = 0, lastGamma = 0; // For debug overlay
+
+// FPS counter for debug overlay
+let fpsFrameCount = 0;
+let fpsLastTime = performance.now();
+let fpsDisplay = 0;
+
+// Wake Lock API for keeping screen on
+let wakeLock = null;
+
+// Fix viewport height for mobile browsers that messes up CSS
+function fixViewportHeight() {
+    document.body.style.height = window.innerHeight + 'px';
+    document.documentElement.style.height = window.innerHeight + 'px';
+}
+window.addEventListener('resize', fixViewportHeight);
+fixViewportHeight();
+
+// Initialize Web App
+btnStart.addEventListener('click', async () => {
+    // Request permissions for Sensors (crucial for iOS 13+)
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+            const permissionState = await DeviceOrientationEvent.requestPermission();
+            if (permissionState !== 'granted') {
+                alert("Permissão de sensor negada. O Horizonte Fixo precisa do giroscópio para funcionar.");
+                return;
+            }
+        } catch (error) {
+            console.error("Erro ao pedir permissão de sensor", error);
+        }
+    }
+
+    // Request sensor permissions for Chrome Android (Permissions API)
+    try {
+        if (navigator.permissions && navigator.permissions.query) {
+            const accel = await navigator.permissions.query({ name: 'accelerometer' }).catch(() => null);
+            const gyro = await navigator.permissions.query({ name: 'gyroscope' }).catch(() => null);
+        }
+    } catch (e) { /* Some browsers don't support these permission names */ }
+
+    // Listen to BOTH events as fallback - some Chrome versions only fire one or the other
+    window.addEventListener('deviceorientation', handleOrientation, true);
+    if ('ondeviceorientationabsolute' in window) {
+        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+    }
+
+    // Hide overlay
+    startOverlay.style.opacity = '0';
+    setTimeout(() => {
+        startOverlay.style.display = 'none';
+        leveler.style.display = isHorizonLockActive ? 'flex' : 'none';
+    }, 500);
+
+    // Fetch cameras and start
+    await getCameras();
+    await startCamera();
+
+    // Start render loop
+    draw();
+});
