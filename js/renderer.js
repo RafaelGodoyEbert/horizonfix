@@ -3,69 +3,175 @@
 // ============================================================
 
 // Draw frame onto a given context
-function renderToCtx(context, width, height) {
+function renderToCtx(context, width, height, isViewfinder = false) {
     const centerX = width / 2;
     const centerY = height / 2;
 
-    // Clear canvas behind
-    context.fillStyle = '#000';
-    context.fillRect(0, 0, width, height);
-
-    context.save();
-    context.translate(centerX, centerY);
-
-    if (isHorizonLockActive) {
-        // Rotate the canvas in the opposite direction of the tilt
-        const rad = -currentRoll * (Math.PI / 180);
-        context.rotate(rad);
-
-        // Apply Crop/Zoom to hide black borders caused by rotation
-        context.scale(zoomFactor, zoomFactor);
-    } else {
-        context.scale(1.0, 1.0);
-    }
-
-    // FULL DIAGONAL COVERAGE
-    // Draw the video large enough that its shortest side covers the full canvas diagonal.
-    // This ensures no black borders appear at ANY rotation angle.
-    const diagonal = Math.sqrt(width * width + height * height);
-
-    // Calculate video base ratio
+    // Calculate video base ratio and diagonal
     const vW = video.videoWidth;
     const vH = video.videoHeight;
+    const diagonal = Math.sqrt(width * width + height * height);
 
     // MATH GUARD: If sensor flips and reports 0x0 momentarily, do not draw and avoid NaN crashes
     if (!vW || !vH || vW === 0 || vH === 0) {
-        context.restore();
+        context.fillStyle = '#000';
+        context.fillRect(0, 0, width, height);
         return;
     }
 
     const videoRatio = vW / vH;
-    let drawWidth, drawHeight;
 
-    // We force the drawn video to cover the entire diagonal circle.
-    // This means we crop into the center of the sensor (just like the S26 Ultra does).
-    if (videoRatio > 1) {
-        // Landscape video source
-        drawHeight = diagonal;
-        drawWidth = diagonal * videoRatio;
+    if (isViewfinder) {
+        // --- VIEWFINDER MODE: STATIC BACKGROUND + LIVE FRAME ---
+        
+        // 1. Draw Static Background (Full Sensor)
+        context.save();
+        context.translate(centerX, centerY);
+        
+        // We draw the video to cover the screen (like a normal camera app)
+        let bgW, bgH;
+        const screenRatio = width / height;
+        if (videoRatio > screenRatio) {
+            bgH = height;
+            bgW = height * videoRatio;
+        } else {
+            bgW = width;
+            bgH = width / videoRatio;
+        }
+        context.drawImage(video, -bgW / 2, -bgH / 2, bgW, bgH);
+        
+        // 2. Clear currentRoll for background (background is static)
+        context.restore();
+
+        // 3. Draw the "Quadro Vivo" (Live Frame) if Horizon Lock is active
+        if (isHorizonLockActive) {
+            drawLiveFrame(context, width, height, videoRatio);
+        }
+
     } else {
-        // Portrait video source
-        drawWidth = diagonal;
-        drawHeight = diagonal / videoRatio;
+        // --- RECORDING MODE: FULLY STABILIZED & CROPPED VIDEO ---
+        context.save();
+        context.translate(centerX, centerY);
+
+        if (isHorizonLockActive) {
+            // Rotate the canvas in the opposite direction of the tilt
+            const rad = -currentRoll * (Math.PI / 180);
+            context.rotate(rad);
+
+            // Apply Crop/Zoom to hide black borders caused by rotation
+            context.scale(zoomFactor, zoomFactor);
+        }
+
+        let drawWidth, drawHeight;
+        // We force the drawn video to cover the entire diagonal circle.
+        if (videoRatio > 1) {
+            drawHeight = diagonal;
+            drawWidth = diagonal * videoRatio;
+        } else {
+            drawWidth = diagonal;
+            drawHeight = diagonal / videoRatio;
+        }
+
+        context.drawImage(video, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+        context.restore();
+    }
+}
+
+// Function to draw the dynamic rotating frame and horizon line
+function drawLiveFrame(context, width, height, videoRatio) {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const rad = -currentRoll * (Math.PI / 180);
+
+    context.save();
+    context.translate(centerX, centerY);
+    context.rotate(rad);
+
+    // Define the recording frame dimensions (e.g., 16:9 box in the center)
+    // We use a safe area that fits within the sensor at any rotation
+    const frameSize = Math.min(width, height) * 0.8;
+    let frameW, frameH;
+    
+    // Default to 16:9 for the frame
+    if (width > height) {
+        frameW = frameSize;
+        frameH = frameSize / (16/9);
+    } else {
+        frameH = frameSize;
+        frameW = frameSize / (16/9);
     }
 
-    // Center the massive video image inside the canvas.
-    // Since we applied context.translate(centerX, centerY) earlier, we draw from -drawWidth/2
-    context.drawImage(video, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    // Apply manual zoom factor to the frame visualization
+    const visualZoom = 1 / zoomFactor; 
+    frameW *= visualZoom;
+    frameH *= visualZoom;
+
+    // 1. Dim area outside the frame (Inverse Reality effect)
+    // We do this by drawing a large rectangle with a hole
+    context.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    
+    // Path for the hole
+    context.beginPath();
+    // Huge outer rectangle (larger than screen diagonal to cover all rotation)
+    const big = Math.max(width, height) * 2;
+    context.rect(-big/2, -big/2, big, big);
+    // Draw the inner frame "hole" (counter-clockwise)
+    context.rect(frameW / 2, -frameH / 2, -frameW, frameH);
+    context.fill();
+
+    // 2. Draw Frame Border
+    context.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    context.lineWidth = 2;
+    context.strokeRect(-frameW / 2, -frameH / 2, frameW, frameH);
+    
+    // 3. Draw "Vergalhão" (Horizon Line) within the frame
+    context.beginPath();
+    context.moveTo(-30, 0);
+    context.lineTo(30, 0);
+    context.strokeStyle = '#00f2fe';
+    context.lineWidth = 3;
+    context.stroke();
+    
+    // Corner marks for the "Pro" look
+    const cornerSize = 20;
+    context.strokeStyle = '#fff';
+    context.lineWidth = 2;
+    
+    // Top-Left
+    context.beginPath();
+    context.moveTo(-frameW/2 + cornerSize, -frameH/2);
+    context.lineTo(-frameW/2, -frameH/2);
+    context.lineTo(-frameW/2, -frameH/2 + cornerSize);
+    context.stroke();
+
+    // Top-Right
+    context.beginPath();
+    context.moveTo(frameW/2 - cornerSize, -frameH/2);
+    context.lineTo(frameW/2, -frameH/2);
+    context.lineTo(frameW/2, -frameH/2 + cornerSize);
+    context.stroke();
+
+    // Bottom-Left
+    context.beginPath();
+    context.moveTo(-frameW/2 + cornerSize, frameH/2);
+    context.lineTo(-frameW/2, frameH/2);
+    context.lineTo(-frameW/2, frameH/2 - cornerSize);
+    context.stroke();
+
+    // Bottom-Right
+    context.beginPath();
+    context.moveTo(frameW/2 - cornerSize, frameH/2);
+    context.lineTo(frameW/2, frameH/2);
+    context.lineTo(frameW/2, frameH/2 - cornerSize);
+    context.stroke();
+
     context.restore();
 }
 
 // The Magic Rendering Loop
 function draw() {
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        // Match canvas to CSS pixel size (NOT physical pixels)
-        // Using window.innerWidth/Height gives small, fast canvas sizes
+        // Match canvas to CSS pixel size
         const displayWidth = window.innerWidth;
         const displayHeight = window.innerHeight;
 
@@ -74,11 +180,10 @@ function draw() {
             canvas.height = displayHeight;
         }
 
-        // Smooth the rotation angle using lerp (0.8 = 80% interpolation per frame)
-        // Higher value = faster/snappier, Lower value = smoother/slower
-        currentRoll = lerpAngle(currentRoll, targetRoll, 0.8);
+        // Smooth the rotation angle using lerp (0.95 = FAST interpolation per frame)
+        currentRoll = lerpAngle(currentRoll, targetRoll, 0.95);
 
-        // FPS counter — update every 500ms to minimize overhead
+        // FPS counter
         fpsFrameCount++;
         const now = performance.now();
         if (now - fpsLastTime >= 500) {
@@ -88,15 +193,15 @@ function draw() {
             debugInfo.innerHTML = `FPS: ${fpsDisplay} | Roll: ${Math.round(currentRoll)}°<br>B: ${Math.round(lastBeta)}° G: ${Math.round(lastGamma)}°<br>${canvas.width}x${canvas.height} | Evt: ${sensorEventCount}`;
         }
 
-        // Update UI text
+        // Update UI text (we keep some standard UI but let the Canvas do the heavy lifting)
         angleText.innerText = Math.abs(currentRoll).toFixed(1) + '°';
-        horizonLine.style.transform = `rotate(${-currentRoll}deg)`;
-
-        // Render to screen map
-        renderToCtx(ctx, canvas.width, canvas.height);
+        
+        // Render to screen (Viewfinder mode)
+        renderToCtx(ctx, canvas.width, canvas.height, true);
 
         if (isRecording) {
-            renderToCtx(recCtx, recCanvas.width, recCanvas.height);
+            // Recording uses the same math but clean output (No Frame overlay)
+            renderToCtx(recCtx, recCanvas.width, recCanvas.height, false);
         }
     }
 

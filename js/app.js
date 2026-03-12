@@ -112,10 +112,12 @@ btnStart.addEventListener('click', async () => {
         }
     } catch (e) { /* Some browsers don't support these permission names */ }
 
-    // Listen to BOTH events as fallback - some Chrome versions only fire one or the other
-    window.addEventListener('deviceorientation', handleOrientation, true);
+    // Listen to device orientation/motion
+    // Prioritize 'deviceorientationabsolute' if available, otherwise use 'deviceorientation'
     if ('ondeviceorientationabsolute' in window) {
         window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+    } else {
+        window.addEventListener('deviceorientation', handleOrientation, true);
     }
     window.addEventListener('devicemotion', handleMotion, true);
 
@@ -123,7 +125,6 @@ btnStart.addEventListener('click', async () => {
     startOverlay.style.opacity = '0';
     setTimeout(() => {
         startOverlay.style.display = 'none';
-        leveler.style.display = isHorizonLockActive ? 'flex' : 'none';
     }, 500);
 
     // Fetch cameras and start

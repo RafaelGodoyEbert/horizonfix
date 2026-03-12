@@ -8,30 +8,34 @@ let hasValidMotionData = false;
 // This avoids the Gimbal Lock that occurs at beta=90 with Euler angles.
 function handleMotion(event) {
     if (event.accelerationIncludingGravity) {
-        const ax = event.accelerationIncludingGravity.x;
-        const ay = event.accelerationIncludingGravity.y;
+        // Use raw values, fallback to 0 to avoid NaN
+        const ax = event.accelerationIncludingGravity.x || 0;
+        const ay = event.accelerationIncludingGravity.y || 0;
         
-        if (ax !== null && ay !== null) {
-            hasValidMotionData = true;
-            sensorEventCount++;
-            lastBeta = ax; // Reusing debug variables to show raw G force
-            lastGamma = ay;
+        hasValidMotionData = true;
+        sensorEventCount++;
+        
+        // Debug metrics
+        lastBeta = ax;
+        lastGamma = ay;
 
-            // Compute roll directly from gravity vector components on the screen plane
-            // atan2(ax, ay) is the gold standard for roll in landscape/portrait
-            let roll = Math.atan2(ax, ay) * 180 / Math.PI;
-            if (isNaN(roll)) roll = 0;
+        // Correct Roll Math from Gravity (ax, ay)
+        // On Android Chrome:
+        // - atan2(ax, ay) returns 0 when upright.
+        // - Increases to 90 when rotated Landscape Left.
+        // - Decreases to -90 when rotated Landscape Right.
+        let roll = Math.atan2(ax, ay) * 180 / Math.PI;
 
-            // Normalize roll to 0-360
-            if (roll < 0) roll += 360;
-
-            let orientation = screen.orientation && screen.orientation.angle !== undefined
-                ? screen.orientation.angle
-                : (window.orientation || 0);
-            
-            // Adjust for device orientation offset
-            targetRoll = -(roll - orientation);
+        // Current UI orientation (0, 90, 180, 270)
+        let orientation = 0;
+        if (screen.orientation && typeof screen.orientation.angle === 'number') {
+            orientation = screen.orientation.angle;
+        } else if (typeof window.orientation === 'number') {
+            orientation = window.orientation;
         }
+
+        // Subtracting orientation aligns the sensor zero-point with the current screen 'Top'
+        targetRoll = roll - orientation;
     }
 }
 

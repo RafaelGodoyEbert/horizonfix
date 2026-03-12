@@ -5,11 +5,6 @@
 // UI Listeners
 horizonToggle.addEventListener('change', (e) => {
     isHorizonLockActive = e.target.checked;
-    if (isHorizonLockActive) {
-        leveler.style.display = 'flex';
-    } else {
-        leveler.style.display = 'none';
-    }
 });
 
 zoomSlider.addEventListener('input', (e) => {
