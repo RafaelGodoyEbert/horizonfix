@@ -18,15 +18,10 @@ btnRecord.addEventListener('click', () => {
 function startRecording() {
     recordedChunks = [];
 
-    // Set exact 1080p 16:9 or 9:16 aspect ratio based on phone orientation.
-    const isPortrait = window.innerHeight > window.innerWidth;
-    if (isPortrait) {
-        recCanvas.width = 1080;
-        recCanvas.height = 1920;
-    } else {
-        recCanvas.width = 1920;
-        recCanvas.height = 1080;
-    }
+    // For Horizon Lock, we ALWAYS record in 16:9 landscape (1920x1080)
+    // The Stabilization logic will fill this landscape frame even if phone is vertical.
+    recCanvas.width = 1920;
+    recCanvas.height = 1080;
 
     // Chrome BUG FIX: captureStream() on an unattached canvas often fails or records 0 bytes.
     // We append it to the body hidden, so the browser graphics engine considers it "active".
