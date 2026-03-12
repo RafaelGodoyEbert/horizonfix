@@ -28,6 +28,9 @@ function renderToCtx(context, width, height, isViewfinder = false) {
         context.save();
         context.translate(centerX, centerY);
         
+        // Apply Zoom to the background as well so it doesn't feel like the frame is shrinking
+        context.scale(zoomFactor, zoomFactor);
+
         // We draw the video to cover the screen (like a normal camera app)
         let bgW, bgH;
         const screenRatio = width / height;
@@ -39,11 +42,9 @@ function renderToCtx(context, width, height, isViewfinder = false) {
             bgH = width / videoRatio;
         }
         context.drawImage(video, -bgW / 2, -bgH / 2, bgW, bgH);
-        
-        // 2. Clear currentRoll for background (background is static)
         context.restore();
 
-        // 3. Draw the "Quadro Vivo" (Live Frame) if Horizon Lock is active
+        // 2. Draw the "Quadro Vivo" (Live Frame) OVER the background
         if (isHorizonLockActive) {
             drawLiveFrame(context, width, height, videoRatio);
         }
@@ -87,8 +88,8 @@ function drawLiveFrame(context, width, height, videoRatio) {
     context.translate(centerX, centerY);
     context.rotate(rad);
 
-    // Define the recording frame dimensions (e.g., 16:9 box in the center)
-    // We use a safe area that fits within the sensor at any rotation
+    // The FRAME represents the stabilization window.
+    // Since the background now zooms, the frame should remain a fixed size relative to the screen.
     const frameSize = Math.min(width, height) * 0.8;
     let frameW, frameH;
     
@@ -101,26 +102,18 @@ function drawLiveFrame(context, width, height, videoRatio) {
         frameW = frameSize / (16/9);
     }
 
-    // Apply manual zoom factor to the frame visualization
-    const visualZoom = 1 / zoomFactor; 
-    frameW *= visualZoom;
-    frameH *= visualZoom;
-
     // 1. Dim area outside the frame (Inverse Reality effect)
-    // We do this by drawing a large rectangle with a hole
-    context.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    // We use a large rectangle with a hole to shadow the areas NOT being recorded.
+    context.fillStyle = 'rgba(0, 0, 0, 0.5)';
     
-    // Path for the hole
     context.beginPath();
-    // Huge outer rectangle (larger than screen diagonal to cover all rotation)
-    const big = Math.max(width, height) * 2;
-    context.rect(-big/2, -big/2, big, big);
-    // Draw the inner frame "hole" (counter-clockwise)
-    context.rect(frameW / 2, -frameH / 2, -frameW, frameH);
-    context.fill();
+    const big = Math.max(width, height) * 2; 
+    context.rect(-big, -big, big * 2, big * 2);
+    context.rect(-frameW / 2, -frameH / 2, frameW, frameH);
+    context.fill('evenodd');
 
     // 2. Draw Frame Border
-    context.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     context.lineWidth = 2;
     context.strokeRect(-frameW / 2, -frameH / 2, frameW, frameH);
     

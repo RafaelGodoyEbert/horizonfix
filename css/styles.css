@@ -175,6 +175,21 @@ video {
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
+    max-height: 60vh; /* Allow scrolling if many controls */
+    overflow-y: auto;
+    padding-right: 5px; /* Space for scrollbar */
+}
+
+/* Custom Scrollbar for a premium look */
+.controls-panel::-webkit-scrollbar {
+    width: 4px;
+}
+.controls-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+.controls-panel::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
 }
 
 .controls-panel.expanded {
