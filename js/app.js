@@ -56,6 +56,7 @@ let currentStream = null;
 // Video Dimension Cache (Z-Shield)
 let cachedVideoW = 1920;
 let cachedVideoH = 1080;
+let lastValidVisual = null; // Storing {w, h, vfScale}
 
 // Recording Variables
 let mediaRecorder;

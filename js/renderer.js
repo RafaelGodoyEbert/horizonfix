@@ -1,5 +1,5 @@
 // ============================================================
-// renderer.js — Core Rendering Engine (v3.0 Z-Shield)
+// renderer.js — Core Rendering Engine (v3.1 NaN-Shield)
 // ============================================================
 
 /**
@@ -12,7 +12,7 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
     // 1. Scene background scale
     const videoRatio = vW / vH;
     const screenRatio = screenWidth / screenHeight;
-    const FRAME_V_SCALE = 0.92; // Slightly larger for better coverage
+    const FRAME_V_SCALE = 0.92;
 
     let baseVFScale;
     if (videoRatio > screenRatio) {
@@ -30,7 +30,6 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
         // Landscape (16:9)
         frameW = (screenWidth < screenHeight) ? (screenWidth * 0.95) : (screenWidth * 0.6);
         frameH = frameW / targetAspect;
-        // Limit to screen height
         if (frameH > screenHeight * 0.85) {
             frameH = screenHeight * 0.85;
             frameW = frameH * targetAspect;
@@ -39,7 +38,6 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
         // Portrait (9:16)
         frameH = screenHeight * 0.75;
         frameW = frameH * targetAspect;
-        // Limit to screen width
         if (frameW > screenWidth * 0.85) {
             frameW = screenWidth * 0.85;
             frameH = frameW / targetAspect;
@@ -59,25 +57,28 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
         frameW = frameH * targetAspect;
     }
 
-    // Safety fallback
-    if (isNaN(frameW) || frameW <= 0) frameW = 300;
-    if (isNaN(frameH) || frameH <= 0) frameH = 300 / targetAspect;
+    // --- NaN / ZERO SHIELD ---
+    if (isNaN(frameW) || isNaN(frameH) || isNaN(finalVFScale) || frameW <= 0 || frameH <= 0 || finalVFScale <= 0) {
+        if (lastValidVisual) return lastValidVisual;
+        // Absolute fallback if no cache exists yet
+        return { w: 300, h: 168, vfScale: 1.0 };
+    }
 
-    return { w: frameW, h: frameH, vfScale: finalVFScale };
+    const result = { w: frameW, h: frameH, vfScale: finalVFScale };
+    lastValidVisual = result; // Update cache
+    return result;
 }
 
 /**
  * Renders the video frame to a specific context
  */
 function renderToCtx(ctx, width, height, isViewfinder = false) {
-    // Z-SHIELD: Always use cached dimensions if current frame is missing
     const vW = video.videoWidth || cachedVideoW;
     const vH = video.videoHeight || cachedVideoH;
 
     const centerX = width / 2;
     const centerY = height / 2;
     
-    // Fallback protection
     const currentR = isNaN(currentRoll) ? 0 : currentRoll;
     const currentZ = isNaN(zoomFactor) ? 1.0 : zoomFactor;
 
@@ -86,11 +87,9 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
     const visual = getVisualFrameSize(screenW, screenH, vW, vH, currentZ);
 
     if (isViewfinder) {
-        // --- VIEWPORT ---
         ctx.fillStyle = '#000'; 
         ctx.fillRect(0, 0, width, height);
 
-        // Render video only if definitely ready
         if (video.readyState >= 2) {
             ctx.save();
             ctx.translate(centerX, centerY);
@@ -99,12 +98,10 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
             ctx.restore();
         }
 
-        // Z-SHIELD: HUD draws REGARDLESS of video ready state
         if (isHorizonLockActive) {
             drawViewfinderHUD(ctx, width, height, visual, currentR);
         }
     } else {
-        // --- RECORDING ---
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
 
@@ -132,11 +129,9 @@ function drawViewfinderHUD(ctx, width, height, visual, roll) {
     ctx.translate(width / 2, height / 2);
     ctx.rotate(rad);
 
-    // --- REFINED 4-RECT MASK ---
-    // Deep overlap (5px) and massive extension (8x)
     ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
     const big = Math.max(width, height) * 8; 
-    const ov = 6; // 6px intersection overlap
+    const ov = 8; // Increased overlap for anti-flicker
 
     // Outer Hood
     ctx.fillRect(-big/2, -big/2, big, big/2 - visual.h/2 + ov); // Top
@@ -144,33 +139,26 @@ function drawViewfinderHUD(ctx, width, height, visual, roll) {
     ctx.fillRect(-big/2, -visual.h/2 - ov, big/2 - visual.w/2 + ov, visual.h + ov*2); // Left
     ctx.fillRect(visual.w/2 - ov, -visual.h/2 - ov, big/2 - visual.w/2 + ov, visual.h + ov*2); // Right
 
-    // --- HUD LINES ---
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 3;
     ctx.strokeRect(-visual.w / 2, -visual.h / 2, visual.w, visual.h);
 
-    // Center Leveler
     ctx.beginPath();
     ctx.moveTo(-60, 0); ctx.lineTo(60, 0);
     ctx.strokeStyle = '#00f2fe'; ctx.lineWidth = 4;
     ctx.stroke();
 
-    // Corner Marks (V3 Style)
     const cs = 40; ctx.lineWidth = 4; ctx.strokeStyle = '#fff';
-    // TL
     ctx.beginPath(); ctx.moveTo(-visual.w/2+cs, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2+cs); ctx.stroke();
-    // TR
     ctx.beginPath(); ctx.moveTo(visual.w/2-cs, -visual.h/2); ctx.lineTo(visual.w/2, -visual.h/2); ctx.lineTo(visual.w/2, -visual.h/2+cs); ctx.stroke();
-    // BL
     ctx.beginPath(); ctx.moveTo(-visual.w/2+cs, visual.h/2); ctx.lineTo(-visual.w/2, visual.h/2); ctx.lineTo(-visual.w/2, visual.h/2-cs); ctx.stroke();
-    // BR
     ctx.beginPath(); ctx.moveTo(visual.w/2-cs, visual.h/2); ctx.lineTo(visual.w/2, visual.h/2); ctx.lineTo(visual.w/2, visual.h/2-cs); ctx.stroke();
 
     ctx.restore();
 }
 
 /**
- * Main Loop (v3.0)
+ * Main Loop (v3.1)
  */
 function draw() {
     const dW = window.innerWidth;
@@ -179,13 +167,11 @@ function draw() {
         canvas.width = dW; canvas.height = dH;
     }
 
-    // Z-SHIELD: Cache dimensions whenever video is healthy
     if (video.readyState >= 2) {
         cachedVideoW = video.videoWidth || cachedVideoW;
         cachedVideoH = video.videoHeight || cachedVideoH;
     }
 
-    // Stabilization
     currentRoll = lerpAngle(currentRoll, targetRoll, 0.18);
     angleText.innerText = Math.abs(currentRoll).toFixed(1) + '°';
     
@@ -194,11 +180,10 @@ function draw() {
         fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
         fpsFrameCount = 0;
         fpsLastTime = now;
-        debugInfo.innerHTML = `V3.0-SHIELD | FPS: ${fpsDisplay} | R: ${Math.round(currentRoll)}°`;
+        debugInfo.innerHTML = `V3.1-SHIELD | FPS: ${fpsDisplay} | R: ${Math.round(currentRoll)}°`;
     }
     fpsFrameCount++;
 
-    // Render always, internally handles state
     renderToCtx(ctx, canvas.width, canvas.height, true);
     if (isRecording) {
         renderToCtx(recCtx, recCanvas.width, recCanvas.height, false);
