@@ -53,6 +53,10 @@ let videoDevices = [];
 let currentDeviceId = null;
 let currentStream = null;
 
+// Video Dimension Cache (Z-Shield)
+let cachedVideoW = 1920;
+let cachedVideoH = 1080;
+
 // Recording Variables
 let mediaRecorder;
 let recordedChunks = [];
