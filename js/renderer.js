@@ -1,5 +1,5 @@
 // ============================================================
-// renderer.js — Core Rendering Engine (v2.7.3)
+// renderer.js — Core Rendering Engine (v2.8)
 // ============================================================
 
 /**
@@ -13,7 +13,7 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
     const videoRatio = vW / vH;
     const screenRatio = screenWidth / screenHeight;
     const TARGET_ASPECT = 16 / 9;
-    const FRAME_V_SCALE = 0.90; // INCREASED to reduce crop/zoom
+    const FRAME_V_SCALE = 0.90; // High coverage
 
     let baseVFScale;
     if (videoRatio > screenRatio) {
@@ -21,25 +21,20 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
     } else {
         baseVFScale = screenWidth / vW;
     }
-    // digital zoom factor
     const finalVFScale = baseVFScale * currentZoom;
 
-    // 2. Define the recording frame (The "bright rectangle")
+    // 2. Define the recording frame
     let frameW, frameH;
     
-    // Constraint: Height MUST be TARGET_ASPECT relative to Width (or vice versa)
     if (screenWidth < screenHeight) {
-        // Portrait phone: Width limited
         frameW = minDim * FRAME_V_SCALE;
         frameH = frameW / TARGET_ASPECT;
     } else {
-        // Landscape phone: Height limited
         frameH = minDim * FRAME_V_SCALE;
         frameW = frameH * TARGET_ASPECT;
     }
 
-    // 3. SENSOR CONSTRAINTS (CRITICAL for Zoom 0.5x)
-    // The frame box on screen cannot be larger than the visible sensor pixels
+    // 3. SENSOR CONSTRAINTS (Prevent black edges)
     const visVideoW = vW * finalVFScale;
     const visVideoH = vH * finalVFScale;
     
@@ -52,9 +47,9 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
         frameW = frameH * TARGET_ASPECT;
     }
 
-    // Safety fallback for NaN
-    if (isNaN(frameW) || frameW <= 0) frameW = 100;
-    if (isNaN(frameH) || frameH <= 0) frameH = 56;
+    // Safety fallback
+    if (isNaN(frameW) || frameW <= 0) frameW = 200;
+    if (isNaN(frameH) || frameH <= 0) frameH = 112;
 
     return { w: frameW, h: frameH, vfScale: finalVFScale };
 }
@@ -70,17 +65,16 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
     const centerX = width / 2;
     const centerY = height / 2;
     
-    // Safety check for global variables
+    // Safety
     if (isNaN(currentRoll)) currentRoll = 0;
     if (isNaN(zoomFactor)) zoomFactor = 1.0;
 
-    // Get parameters from Screen perspective
     const screenW = window.innerWidth || 1080;
     const screenH = window.innerHeight || 1920;
     const visual = getVisualFrameSize(screenW, screenH, vW, vH, zoomFactor);
 
     if (isViewfinder) {
-        // --- VIEWPORT RENDERING ---
+        // --- VIEWPORT ---
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
 
@@ -90,22 +84,19 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
         ctx.drawImage(video, -vW/2, -vH/2, vW, vH);
         ctx.restore();
 
-        // Overlay is drawn if lock is on OR if we just want it always visible (User said 'Quadro Vivo' concept)
         if (isHorizonLockActive) {
             drawViewfinderHUD(ctx, width, height, visual);
         }
     } else {
-        // --- RECORDING RENDERING ---
+        // --- RECORDING ---
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, width, height);
 
         ctx.save();
         ctx.translate(centerX, centerY);
-        // COUNTER-ROTATE the sensor image to keep content level
         ctx.rotate(currentRoll * (Math.PI / 180));
 
-        // SYNC MATH:
-        // We want the area that was inside 'visual.h' on screen to fill 'height' (1080)
+        // Sync Content to filling 1080p
         const recScale = (height / visual.h) * visual.vfScale;
         ctx.scale(recScale, recScale);
         
@@ -115,38 +106,44 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
 }
 
 /**
- * HUD & Masking
+ * HUD & Robust Masking
  */
 function drawViewfinderHUD(ctx, width, height, visual) {
-    // Rotation for HUD: The HUD box itself rotates relative to the screen
-    // to keep its horizontal axis level with gravity.
     const rad = currentRoll * (Math.PI / 180);
 
     ctx.save();
     ctx.translate(width / 2, height / 2);
     ctx.rotate(rad);
 
-    // Atomic Shadow Mask (Even-Odd)
-    ctx.beginPath();
-    const big = Math.max(width, height) * 5;
-    ctx.rect(-big / 2, -big / 2, big, big);
-    ctx.rect(-visual.w / 2, -visual.h / 2, visual.w, visual.h);
+    // --- ROBUST 4-RECT OVERLAPPING MASK ---
+    // Why: even-odd and paths sometimes flicker on sub-pixels. 
+    // Solid overlapping rects are mathematically immune to edge gaps.
     ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-    ctx.fill('evenodd');
+    const big = Math.max(width, height) * 5;
+    const ov = 2; // 2px overlap (The "Immunity Gap")
 
-    // White Border
+    // Top
+    ctx.fillRect(-big/2, -big/2, big, big/2 - visual.h/2 + ov);
+    // Bottom
+    ctx.fillRect(-big/2, visual.h/2 - ov, big, big/2 - visual.h/2 + ov);
+    // Left
+    ctx.fillRect(-big/2, -visual.h/2 - ov, big/2 - visual.w/2 + ov, visual.h + ov*2);
+    // Right
+    ctx.fillRect(visual.w/2 - ov, -visual.h/2 - ov, big/2 - visual.w/2 + ov, visual.h + ov*2);
+
+    // --- HUD LINES ---
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2.5;
     ctx.strokeRect(-visual.w / 2, -visual.h / 2, visual.w, visual.h);
 
-    // Horizon Center Cross (Pro-look)
+    // Leveler Center
     ctx.beginPath();
     ctx.moveTo(-50, 0); ctx.lineTo(50, 0);
     ctx.strokeStyle = '#00f2fe'; ctx.lineWidth = 3;
     ctx.stroke();
 
     // Corner Pro Accents
-    const cs = 30; ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff';
+    const cs = 35; ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff';
     // TL
     ctx.beginPath(); ctx.moveTo(-visual.w/2+cs, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2+cs); ctx.stroke();
     // TR
@@ -170,8 +167,9 @@ function draw() {
             canvas.width = dW; canvas.height = dH;
         }
 
-        // SMOOTH stabilization (Damping 0.40 for pro feel, 0.70 was too twitchy)
-        currentRoll = lerpAngle(currentRoll, targetRoll, 0.40);
+        // GIMBAL-GRADE LERP (0.20): 
+        // Balances responsiveness while removing all tripod jitter combined with Sensors LPF.
+        currentRoll = lerpAngle(currentRoll, targetRoll, 0.20);
         angleText.innerText = Math.abs(currentRoll).toFixed(1) + '°';
         
         const now = performance.now();
@@ -179,7 +177,7 @@ function draw() {
             fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
             fpsFrameCount = 0;
             fpsLastTime = now;
-            debugInfo.innerHTML = `V2.7.3 | FPS: ${fpsDisplay} | R: ${Math.round(currentRoll)}°`;
+            debugInfo.innerHTML = `V2.8 | FPS: ${fpsDisplay} | R: ${Math.round(currentRoll)}°`;
         }
         fpsFrameCount++;
 
