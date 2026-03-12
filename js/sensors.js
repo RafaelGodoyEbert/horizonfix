@@ -34,16 +34,14 @@ function handleMotion(event) {
             orientation = window.orientation;
         }
 
-        // Subtracting orientation aligns the sensor zero-point with the current screen 'Top'
-        targetRoll = roll - orientation;
+        // Subtracting orientation aligns it with screen rotation.
+        // We use -roll because we want to COUNTER-ROTATE the frame.
+        targetRoll = -roll + orientation;
     }
 }
 
-// Fallback: Process sensor data using DeviceOrientation Euler angles
-// atan2(sin(g)*cos(b), sin(b)) extracts the exact roll angle
-// from deviceorientation beta/gamma values at any phone position.
 function handleOrientation(event) {
-    if (hasValidMotionData) return; // Prioritize devicemotion!
+    if (hasValidMotionData) return;
     
     if (event.beta === null || event.gamma === null) return;
 
@@ -56,7 +54,6 @@ function handleOrientation(event) {
     const b = beta * Math.PI / 180;
     const g = gamma * Math.PI / 180;
 
-    // Gravity vector projected onto screen plane
     const x = Math.sin(g) * Math.cos(b);
     const y = Math.sin(b);
 
@@ -68,7 +65,8 @@ function handleOrientation(event) {
         : (window.orientation || 0);
     if (isNaN(orientation)) orientation = 0;
 
-    targetRoll = -(roll - orientation);
+    // Unified sign: -roll + orientation
+    targetRoll = -roll + orientation;
 }
 
 // Handle 360 wrap around for smooth lerp so it doesn't spin wildly

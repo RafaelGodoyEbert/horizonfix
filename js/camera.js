@@ -130,7 +130,7 @@ async function startCamera(deviceId = null) {
     // frameRate is set to ideal:60 for the primary request. If the ultrawide can't handle it,
     // the fallback chain below will retry WITHOUT framerate so the lens still switches.
     let videoConstraints = {
-        width: { ideal: 1080 },
+        width: { ideal: 1920 },
         height: { ideal: 1080 },
         frameRate: { ideal: 60 }
     };
