@@ -138,8 +138,12 @@ async function startCamera(deviceId = null) {
     // Hint to the browser to prioritize performance over battery saving (Chrome/Edge)
     // Some implementations might ignore this, but it's the standard API for WebRTC
     try {
-        if (navigator.mediaDevices.getSupportedConstraints && navigator.mediaDevices.getSupportedConstraints().powerEfficient) {
-            videoConstraints.powerEfficient = false;
+        if (navigator.mediaDevices.getSupportedConstraints) {
+            const supported = navigator.mediaDevices.getSupportedConstraints();
+            if (supported.powerEfficient) videoConstraints.powerEfficient = false;
+            // Native Super Steady hints for Chrome/Android
+            if (supported.videoStabilizationMode) videoConstraints.videoStabilizationMode = "preview";
+            if (supported.videoStabilization) videoConstraints.videoStabilization = true;
         }
     } catch(e) {}
 
@@ -257,6 +261,12 @@ async function applyManualSettings() {
         // Auto White Balance
         if (capabilities.whiteBalanceMode && capabilities.whiteBalanceMode.includes('continuous')) {
             advancedConstraints.whiteBalanceMode = 'continuous';
+            hasChanges = true;
+        }
+
+        // Super Steady / Video Stabilization (Advanced)
+        if (capabilities.videoStabilizationMode && capabilities.videoStabilizationMode.includes('preview')) {
+            advancedConstraints.videoStabilizationMode = 'preview';
             hasChanges = true;
         }
 

@@ -104,27 +104,15 @@ btnStart.addEventListener('click', async () => {
         }
     }
 
-    // Try AbsoluteOrientationSensor (Generic Sensor API) first
-    let sensorStarted = false;
-    if ('AbsoluteOrientationSensor' in window) {
-        try {
-            const sensor = new AbsoluteOrientationSensor({ frequency: 60 });
-            sensor.addEventListener('reading', () => handleSensor(sensor.quaternion));
-            sensor.addEventListener('error', event => {
-                if (event.error.name === 'NotAllowedError') {
-                    console.error('Permission to access sensor was denied.');
-                } else if (event.error.name === 'NotReadableError') {
-                    console.error('Cannot connect to the sensor.');
-                }
-            });
-            sensor.start();
-            sensorStarted = true;
-        } catch (error) {
-            console.error('AbsoluteOrientationSensor is not supported or failed to start:', error);
+    // Request sensor permissions for Chrome Android (Permissions API)
+    try {
+        if (navigator.permissions && navigator.permissions.query) {
+            const accel = await navigator.permissions.query({ name: 'accelerometer' }).catch(() => null);
+            const gyro = await navigator.permissions.query({ name: 'gyroscope' }).catch(() => null);
         }
-    }
-    
-    // Fallback listeners
+    } catch (e) { /* Some browsers don't support these permission names */ }
+
+    // Listen to BOTH events as fallback - some Chrome versions only fire one or the other
     window.addEventListener('deviceorientation', handleOrientation, true);
     if ('ondeviceorientationabsolute' in window) {
         window.addEventListener('deviceorientationabsolute', handleOrientation, true);
