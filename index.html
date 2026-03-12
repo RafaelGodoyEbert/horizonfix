@@ -41,15 +41,24 @@
                 Cam Debug...
             </div>
 
-            <!-- Camera Switch Button -->
-            <button id="btn-flip-camera"
-                style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12A9 9 0 0 0 6 5.3L3 8" />
-                    <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
-                </svg>
-            </button>
+            <div style="display: flex; gap: 8px;">
+                <!-- Aspect Ratio Toggle Button -->
+                <button id="btn-aspect-toggle"
+                    style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto; color: white; font-size: 10px; font-weight: bold; flex-direction: column;">
+                    <span id="aspect-label">16:9</span>
+                    <div style="width: 12px; height: 8px; border: 1px solid white; margin-top: 2px;" id="aspect-icon"></div>
+                </button>
+
+                <!-- Camera Switch Button -->
+                <button id="btn-flip-camera"
+                    style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12A9 9 0 0 0 6 5.3L3 8" />
+                        <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <div class="recording-time" id="recording-time">
@@ -165,7 +174,7 @@
             <circle cx="12" cy="13" r="3" />
         </svg>
 
-        <h1>Horizonte Fixo v2.8</h1>
+        <h1>Horizonte Fixo v2.9</h1>
         <p class="desc">Replicação da funcionalidade de estabilização extrema de vídeo em tempo real no navegador.
         </p>
 

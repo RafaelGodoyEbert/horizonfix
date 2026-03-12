@@ -1,19 +1,18 @@
 // ============================================================
-// renderer.js — Core Rendering Engine (v2.8)
+// renderer.js — Core Rendering Engine (v2.9)
 // ============================================================
 
 /**
  * Calculates the visual frame size as seen on the screen.
- * This is crucial for synchronizing the recording.
+ * Synchronized with the dynamic aspect ratio.
  */
 function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
     const minDim = Math.min(screenWidth, screenHeight);
     
-    // 1. Calculate how the video fills the screen (VF background scale)
+    // 1. Scene background scale
     const videoRatio = vW / vH;
     const screenRatio = screenWidth / screenHeight;
-    const TARGET_ASPECT = 16 / 9;
-    const FRAME_V_SCALE = 0.90; // High coverage
+    const FRAME_V_SCALE = 0.90;
 
     let baseVFScale;
     if (videoRatio > screenRatio) {
@@ -23,39 +22,56 @@ function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom) {
     }
     const finalVFScale = baseVFScale * currentZoom;
 
-    // 2. Define the recording frame
+    // 2. Define the recording frame (The "bright rectangle")
+    // Use the global 'recAspectRatio' (16/9 or 9/16)
+    const targetAspect = recAspectRatio;
     let frameW, frameH;
     
-    if (screenWidth < screenHeight) {
+    if (targetAspect > 1) {
+        // 16:9 Mode (Horizontal)
         frameW = minDim * FRAME_V_SCALE;
-        frameH = frameW / TARGET_ASPECT;
+        if (screenWidth > screenHeight) frameW = screenW * 0.5; // Wider in landscape
+        frameH = frameW / targetAspect;
+        
+        // Safety: ensure it fits height
+        if (frameH > screenHeight * 0.8) {
+            frameH = screenHeight * 0.8;
+            frameW = frameH * targetAspect;
+        }
     } else {
-        frameH = minDim * FRAME_V_SCALE;
-        frameW = frameH * TARGET_ASPECT;
+        // 9:16 Mode (Vertical)
+        frameH = screenHeight * 0.7;
+        frameW = frameH * targetAspect;
+        
+        // Safety: ensure it fits width
+        if (frameW > screenWidth * 0.8) {
+            frameW = screenWidth * 0.8;
+            frameH = frameW / targetAspect;
+        }
     }
 
-    // 3. SENSOR CONSTRAINTS (Prevent black edges)
+    // 3. Sensor Constraints (Hardware limit)
     const visVideoW = vW * finalVFScale;
     const visVideoH = vH * finalVFScale;
     
     if (frameW > visVideoW * 0.98) {
         frameW = visVideoW * 0.98;
-        frameH = frameW / TARGET_ASPECT;
+        frameH = frameW / targetAspect;
     }
     if (frameH > visVideoH * 0.98) {
         frameH = visVideoH * 0.98;
-        frameW = frameH * TARGET_ASPECT;
+        frameW = frameH * targetAspect;
     }
 
-    // Safety fallback
+    // Static fallbacks
     if (isNaN(frameW) || frameW <= 0) frameW = 200;
-    if (isNaN(frameH) || frameH <= 0) frameH = 112;
+    if (isNaN(frameH) || frameH <= 0) frameH = 200 / targetAspect;
 
     return { w: frameW, h: frameH, vfScale: finalVFScale };
 }
 
 /**
- * Renders the video frame to a specific context (Viewfinder or Recording)
+ * Renders the video frame to a specific context
  */
 function renderToCtx(ctx, width, height, isViewfinder = false) {
     const vW = video.videoWidth;
@@ -65,17 +81,17 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
     const centerX = width / 2;
     const centerY = height / 2;
     
-    // Safety
-    if (isNaN(currentRoll)) currentRoll = 0;
-    if (isNaN(zoomFactor)) zoomFactor = 1.0;
+    // Fallback protection for globals
+    const currentR = isNaN(currentRoll) ? 0 : currentRoll;
+    const currentZ = isNaN(zoomFactor) ? 1.0 : zoomFactor;
 
     const screenW = window.innerWidth || 1080;
     const screenH = window.innerHeight || 1920;
-    const visual = getVisualFrameSize(screenW, screenH, vW, vH, zoomFactor);
+    const visual = getVisualFrameSize(screenW, screenH, vW, vH, currentZ);
 
     if (isViewfinder) {
         // --- VIEWPORT ---
-        ctx.fillStyle = '#000';
+        ctx.fillStyle = '#111'; // Darker base to emphasize frame
         ctx.fillRect(0, 0, width, height);
 
         ctx.save();
@@ -85,7 +101,7 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
         ctx.restore();
 
         if (isHorizonLockActive) {
-            drawViewfinderHUD(ctx, width, height, visual);
+            drawViewfinderHUD(ctx, width, height, visual, currentR);
         }
     } else {
         // --- RECORDING ---
@@ -94,9 +110,9 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
 
         ctx.save();
         ctx.translate(centerX, centerY);
-        ctx.rotate(currentRoll * (Math.PI / 180));
+        ctx.rotate(currentR * (Math.PI / 180));
 
-        // Sync Content to filling 1080p
+        // Content Sync
         const recScale = (height / visual.h) * visual.vfScale;
         ctx.scale(recScale, recScale);
         
@@ -106,22 +122,22 @@ function renderToCtx(ctx, width, height, isViewfinder = false) {
 }
 
 /**
- * HUD & Robust Masking
+ * HUD & ULTRA-MASK (Zero Flicker)
  */
-function drawViewfinderHUD(ctx, width, height, visual) {
-    const rad = currentRoll * (Math.PI / 180);
+function drawViewfinderHUD(ctx, width, height, visual, roll) {
+    const rad = roll * (Math.PI / 180);
 
     ctx.save();
     ctx.translate(width / 2, height / 2);
     ctx.rotate(rad);
 
-    // --- ROBUST 4-RECT OVERLAPPING MASK ---
-    // Why: even-odd and paths sometimes flicker on sub-pixels. 
-    // Solid overlapping rects are mathematically immune to edge gaps.
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-    const big = Math.max(width, height) * 5;
-    const ov = 2; // 2px overlap (The "Immunity Gap")
+    // --- REFINED 4-RECT MASK ---
+    // Increased overlap and 'big' size for extreme rotation safety.
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    const big = Math.max(width, height) * 6; // Increased to 6x
+    const ov = 4; // 4px overlap for maximum safety
 
+    // Outer Hood
     // Top
     ctx.fillRect(-big/2, -big/2, big, big/2 - visual.h/2 + ov);
     // Bottom
@@ -131,19 +147,19 @@ function drawViewfinderHUD(ctx, width, height, visual) {
     // Right
     ctx.fillRect(visual.w/2 - ov, -visual.h/2 - ov, big/2 - visual.w/2 + ov, visual.h + ov*2);
 
-    // --- HUD LINES ---
-    ctx.strokeStyle = '#fff';
+    // --- SHARP HUD ---
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
     ctx.lineWidth = 2.5;
     ctx.strokeRect(-visual.w / 2, -visual.h / 2, visual.w, visual.h);
 
-    // Leveler Center
+    // Center Leveler
     ctx.beginPath();
     ctx.moveTo(-50, 0); ctx.lineTo(50, 0);
     ctx.strokeStyle = '#00f2fe'; ctx.lineWidth = 3;
     ctx.stroke();
 
-    // Corner Pro Accents
-    const cs = 35; ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff';
+    // Corner Marks
+    const cs = 35; ctx.lineWidth = 3; ctx.strokeStyle = '#fff';
     // TL
     ctx.beginPath(); ctx.moveTo(-visual.w/2+cs, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2+cs); ctx.stroke();
     // TR
@@ -167,9 +183,8 @@ function draw() {
             canvas.width = dW; canvas.height = dH;
         }
 
-        // GIMBAL-GRADE LERP (0.20): 
-        // Balances responsiveness while removing all tripod jitter combined with Sensors LPF.
-        currentRoll = lerpAngle(currentRoll, targetRoll, 0.20);
+        // SMOOTH stabilization (Tuned to 0.18 for gimbal smoothness)
+        currentRoll = lerpAngle(currentRoll, targetRoll, 0.18);
         angleText.innerText = Math.abs(currentRoll).toFixed(1) + '°';
         
         const now = performance.now();
@@ -177,7 +192,7 @@ function draw() {
             fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
             fpsFrameCount = 0;
             fpsLastTime = now;
-            debugInfo.innerHTML = `V2.8 | FPS: ${fpsDisplay} | R: ${Math.round(currentRoll)}°`;
+            debugInfo.innerHTML = `V2.9 | FPS: ${fpsDisplay} | R: ${Math.round(currentRoll)}°`;
         }
         fpsFrameCount++;
 

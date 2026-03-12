@@ -41,6 +41,7 @@ let currentRoll = 0; // The angle of device tilt
 let isHorizonLockActive = horizonToggle.checked;
 let isOisLockActive = document.getElementById('ois-toggle').checked;
 let zoomFactor = parseFloat(zoomSlider.value);
+let recAspectRatio = 16 / 9; // Default 16:9
 
 let isShutterManual = false;
 let shutterValue = parseInt(shutterSlider.value);
