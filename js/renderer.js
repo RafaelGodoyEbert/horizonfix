@@ -1,140 +1,153 @@
 // ============================================================
-// renderer.js — Core Rendering Engine (v3.4 Ultra-Shield)
+// renderer.js — Core Rendering Engine (v3.5 Stable)
 // ============================================================
 
 /**
- * Calculates visual frame size with Rotation-Aware Containment.
+ * ARCHITECTURE v3.5:
+ * - The VIDEO (background) rotates to compensate for device tilt
+ * - The FRAME (white rectangle) stays PERFECTLY STILL on screen
+ * - Frame size is the largest rectangle that fits inside the
+ *   INSCRIBED CIRCLE of the sensor, so rotating video NEVER
+ *   exposes black edges — guaranteed mathematically.
+ *
+ * Sensor is requested as 1080x1080 (square). Even if browser
+ * delivers 16:9, we use the shortest dimension as our "safe radius".
  */
-function getVisualFrameSize(screenWidth, screenHeight, vW, vH, currentZoom, roll) {
-    const minDim = Math.min(screenWidth, screenHeight);
-    
-    // 1. Scene background scale
-    const videoRatio = vW / vH;
-    const screenRatio = screenWidth / screenHeight;
-    const isLandscapeScreen = screenWidth > screenHeight;
 
-    let baseVFScale;
-    if (videoRatio > screenRatio) {
-        baseVFScale = screenHeight / vH;
-    } else {
-        baseVFScale = screenWidth / vW;
-    }
-    const finalVFScale = baseVFScale * currentZoom;
+// Cached stable frame dimensions — computed ONCE per canvas resize
+// and NEVER changed during animation. This kills flicker.
+let _stableCache = null;
+let _stableCacheKey = '';
 
-    // 2. Define the recording frame
-    const targetAspect = window.state.recAspectRatio || (16/9);
-    let frameW, frameH;
-    
-    if (targetAspect > 1) {
-        // Landscape (16:9)
-        frameW = isLandscapeScreen ? (screenWidth * 0.7) : (screenWidth * 0.95);
-        frameH = frameW / targetAspect;
-    } else {
-        // Portrait (9:16)
-        frameH = isLandscapeScreen ? (screenHeight * 0.8) : (screenHeight * 0.75);
-        frameW = frameH * targetAspect;
-    }
+function getStableFrameDimensions(canvasW, canvasH, videoW, videoH, targetAspect) {
+    const key = `${canvasW}|${canvasH}|${videoW}|${videoH}|${targetAspect.toFixed(4)}`;
+    if (_stableCacheKey === key && _stableCache) return _stableCache;
 
-    // --- MATHEMATICAL CONTAINMENT TRAVA (v3.4) ---
-    // Ensure the rotated box fits inside the source image with 5% margin
-    const rad = Math.abs(roll * (Math.PI / 180));
-    const cosR = Math.cos(rad);
-    const sinR = Math.sin(rad);
+    // The inscribed circle radius of the sensor (shortest half-dimension).
+    // This is the MAX distance from center that is ALWAYS valid,
+    // regardless of rotation angle — zero black bars guaranteed.
+    const sensorRadius = Math.min(videoW, videoH) / 2;
 
-    const limitX = vW * finalVFScale * 0.94;
-    const limitY = vH * finalVFScale * 0.94;
+    // Largest rectangle with given aspect ratio that fits inside this circle:
+    //   W² + H² = (2R)²  and  H = W/aspect
+    //   W = 2R / sqrt(1 + 1/aspect²)
+    const aspect = targetAspect;
+    const inscribedW = (2 * sensorRadius) / Math.sqrt(1 + 1 / (aspect * aspect));
+    const inscribedH = inscribedW / aspect;
 
-    const currentSpreadX = frameW * cosR + frameH * sinR;
-    const currentSpreadY = frameW * sinR + frameH * cosR;
+    // Scale to fit the canvas display area (max 92% of screen edge)
+    const scaleToFit = Math.min(
+        (canvasW * 0.92) / inscribedW,
+        (canvasH * 0.92) / inscribedH
+    );
 
-    const scaleX = limitX / currentSpreadX;
-    const scaleY = limitY / currentSpreadY;
-    const clampFactor = Math.min(1.0, scaleX, scaleY);
+    const frameW = inscribedW * scaleToFit;
+    const frameH = inscribedH * scaleToFit;
 
-    frameW *= clampFactor;
-    frameH *= clampFactor;
+    // Video fill scale: video covers full canvas (like background-size: cover)
+    const videoFillScale = Math.max(canvasW / videoW, canvasH / videoH);
 
-    // Hard Fallback Shield
-    if (isNaN(frameW) || isNaN(frameH) || frameW <= 0 || frameH <= 0) {
-        if (window.state.lastValidVisual) return window.state.lastValidVisual;
-        return { w: 300, h: 168, vfScale: 1.0 };
-    }
-
-    const result = { w: frameW, h: frameH, vfScale: finalVFScale };
-    window.state.lastValidVisual = result; 
-    return result;
+    _stableCache = { frameW, frameH, videoFillScale, sensorRadius, inscribedW, inscribedH };
+    _stableCacheKey = key;
+    return _stableCache;
 }
 
 /**
- * Standard Context Renderer
+ * Main render — draws one frame onto a given context.
+ * isViewfinder: true = show HUD overlays; false = clean recording output
  */
-function renderToCtx(ctx, width, height, isViewfinder = false) {
+function renderToCtx(ctx, width, height, isViewfinder) {
     const s = window.state;
-    // CRITICAL: Always use cached dimensions for the math to prevent HUD flicker
-    const vW = video.videoWidth || s.cachedVideoW;
-    const vH = video.videoHeight || s.cachedVideoH;
 
-    const currentR = isNaN(s.currentRoll) ? 0 : s.currentRoll;
-    const currentZ = isNaN(s.zoomFactor) ? 1.0 : s.zoomFactor;
+    const vW = s.cachedVideoW;
+    const vH = s.cachedVideoH;
 
-    const screenW = window.innerWidth;
-    const screenH = window.innerHeight;
-    const visual = getVisualFrameSize(screenW, screenH, vW, vH, currentZ, currentR);
+    if (vW <= 0 || vH <= 0) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
+        return;
+    }
 
-    // --- DRAW PIPELINE ---
+    const targetAspect = s.recAspectRatio || (16 / 9);
+    const dims = getStableFrameDimensions(width, height, vW, vH, targetAspect);
+
+    const roll = isNaN(s.currentRoll) ? 0 : s.currentRoll;
+    const zoom = isNaN(s.zoomFactor) ? 1.0 : s.zoomFactor;
+    const rad = roll * (Math.PI / 180);
+
+    // ── 1. Black background
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, width, height);
 
+    // ── 2. VIDEO rotates around canvas center to counteract device tilt.
+    //       Zoom scales around center. Because sensor is square (or we use
+    //       shortest dimension), rotating never reveals edges.
     if (video.readyState >= 2) {
         ctx.save();
-        ctx.translate(width/2, height/2);
-        ctx.scale(visual.vfScale, visual.vfScale);
-        ctx.drawImage(video, -vW/2, -vH/2, vW, vH);
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(rad);
+        ctx.scale(dims.videoFillScale * zoom, dims.videoFillScale * zoom);
+        ctx.drawImage(video, -vW / 2, -vH / 2, vW, vH);
         ctx.restore();
     }
 
-    // Shielded HUD: Always drawn if active, using cached math results
+    // ── 3. STATIC mask + STATIC frame — absolutely no rotation here.
+    //       Frame is always centered, always same size.
     if (s.isHorizonLockActive) {
-        drawViewfinderHUD(ctx, width, height, visual, currentR);
+        drawStaticHUD(ctx, width, height, dims, isViewfinder);
     }
 }
 
 /**
- * HUD Drawing (v3.4 Refined)
+ * Draws the non-rotating frame, mask, and horizon indicator.
+ * Zero jitter: positions are computed from stable cache only.
  */
-function drawViewfinderHUD(ctx, width, height, visual, roll) {
-    const rad = roll * (Math.PI / 180);
-    ctx.save();
-    ctx.translate(width / 2, height / 2);
-    ctx.rotate(rad);
+function drawStaticHUD(ctx, width, height, dims, isViewfinder) {
+    const hw = dims.frameW / 2;
+    const hh = dims.frameH / 2;
+    const cx = width / 2;
+    const cy = height / 2;
 
-    // 4-Rect Shield Mask (Large overlaps to kill flickering)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
-    const big = Math.max(width, height) * 12; // Massive hood
-    const ov = 20; // 20px overlap
+    // ── Darkening mask outside frame (4 rects, no overdraw artifacts)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(0, 0, width, cy - hh);                         // top
+    ctx.fillRect(0, cy + hh, width, height - (cy + hh));        // bottom
+    ctx.fillRect(0, cy - hh, cx - hw, dims.frameH);             // left
+    ctx.fillRect(cx + hw, cy - hh, width - (cx + hw), dims.frameH); // right
 
-    ctx.fillRect(-big/2, -big/2, big, big/2 - visual.h/2 + ov); // T
-    ctx.fillRect(-big/2, visual.h/2 - ov, big, big/2 - visual.h/2 + ov); // B
-    ctx.fillRect(-big/2, -visual.h/2 - ov, big/2 - visual.w/2 + ov, visual.h + ov*2); // L
-    ctx.fillRect(visual.w/2 - ov, -visual.h/2 - ov, big/2 - visual.w/2 + ov, visual.h + ov*2); // R
+    // ── Frame border
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - hw, cy - hh, dims.frameW, dims.frameH);
 
-    // Visual Frame
-    ctx.strokeStyle = '#fff';
+    // ── Corner accents
+    const cs = 28;
+    ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 3;
-    ctx.strokeRect(-visual.w / 2, -visual.h / 2, visual.w, visual.h);
+    // TL
+    ctx.beginPath(); ctx.moveTo(cx - hw + cs, cy - hh); ctx.lineTo(cx - hw, cy - hh); ctx.lineTo(cx - hw, cy - hh + cs); ctx.stroke();
+    // TR
+    ctx.beginPath(); ctx.moveTo(cx + hw - cs, cy - hh); ctx.lineTo(cx + hw, cy - hh); ctx.lineTo(cx + hw, cy - hh + cs); ctx.stroke();
+    // BL
+    ctx.beginPath(); ctx.moveTo(cx - hw + cs, cy + hh); ctx.lineTo(cx - hw, cy + hh); ctx.lineTo(cx - hw, cy + hh - cs); ctx.stroke();
+    // BR
+    ctx.beginPath(); ctx.moveTo(cx + hw - cs, cy + hh); ctx.lineTo(cx + hw, cy + hh); ctx.lineTo(cx + hw, cy + hh - cs); ctx.stroke();
 
-    // Horizon line
-    ctx.beginPath(); ctx.moveTo(-60, 0); ctx.lineTo(60, 0);
-    ctx.strokeStyle = '#00f2fe'; ctx.lineWidth = 4; ctx.stroke();
+    // ── Horizon line (static center crosshair — always level visually)
+    if (isViewfinder) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 55, cy);
+        ctx.lineTo(cx + 55, cy);
+        ctx.strokeStyle = '#00f2fe';
+        ctx.lineWidth = 3;
+        ctx.stroke();
 
-    // v3.4 Corner Pro Style
-    const cs = 50; ctx.lineWidth = 4; ctx.strokeStyle = '#fff';
-    ctx.beginPath(); ctx.moveTo(-visual.w/2+cs, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2); ctx.lineTo(-visual.w/2, -visual.h/2+cs); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(visual.w/2-cs, -visual.h/2); ctx.lineTo(visual.w/2, -visual.h/2); ctx.lineTo(visual.w/2, -visual.h/2+cs); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-visual.w/2+cs, visual.h/2); ctx.lineTo(-visual.w/2, visual.h/2); ctx.lineTo(-visual.w/2, visual.h/2-cs); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(visual.w/2-cs, visual.h/2); ctx.lineTo(visual.w/2, visual.h/2); ctx.lineTo(visual.w/2, visual.h/2-cs); ctx.stroke();
-
-    ctx.restore();
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#00f2fe';
+        ctx.fill();
+    }
 }
 
 /**
@@ -145,33 +158,42 @@ function draw() {
     const dW = window.innerWidth;
     const dH = window.innerHeight;
 
-    if (dW > 0 && dH > 0) {
-        if (canvas.width !== dW || canvas.height !== dH) {
-            canvas.width = dW; canvas.height = dH;
+    // Resize canvas to match screen (invalidates frame cache)
+    if (canvas.width !== dW || canvas.height !== dH) {
+        canvas.width = dW;
+        canvas.height = dH;
+        _stableCache = null;
+    }
+
+    // Cache video dimensions (invalidate frame cache only when sensor size changes)
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+        if (s.cachedVideoW !== video.videoWidth || s.cachedVideoH !== video.videoHeight) {
+            s.cachedVideoW = video.videoWidth;
+            s.cachedVideoH = video.videoHeight;
+            _stableCache = null;
         }
     }
 
-    if (video.readyState >= 2) {
-        s.cachedVideoW = video.videoWidth || s.cachedVideoW;
-        s.cachedVideoH = video.videoHeight || s.cachedVideoH;
-    }
-
-    // Stabilize (Damping 0.18 for cinematic feel)
-    s.currentRoll = lerpAngle(s.currentRoll, s.targetRoll, 0.18);
+    // Smooth roll — 0.08 = cinematic stability, low jitter
+    s.currentRoll = lerpAngle(s.currentRoll, s.targetRoll, 0.08);
     angleText.innerText = Math.abs(s.currentRoll).toFixed(1) + '°';
-    
+
+    // FPS counter
     const now = performance.now();
     if (now - fpsLastTime >= 500) {
         fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
         fpsFrameCount = 0;
         fpsLastTime = now;
-        debugInfo.innerHTML = `V3.4-ULTRA | FPS: ${fpsDisplay} | R: ${Math.round(s.currentRoll)}°`;
+        debugInfo.innerHTML = `V3.5 | FPS:${fpsDisplay} | ${s.cachedVideoW}x${s.cachedVideoH} | R:${s.currentRoll.toFixed(1)}°`;
     }
     fpsFrameCount++;
 
+    // Render viewfinder
     renderToCtx(ctx, canvas.width, canvas.height, true);
+
+    // Render recording canvas
     if (s.isRecording) {
-        const rCtx = recCanvas.getContext('2d');
+        const rCtx = recCanvas.getContext('2d', { alpha: false });
         renderToCtx(rCtx, recCanvas.width, recCanvas.height, false);
     }
 
