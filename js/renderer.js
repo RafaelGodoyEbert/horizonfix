@@ -35,17 +35,17 @@ function getStableFrameDimensions(canvasW, canvasH, videoW, videoH, targetAspect
     const inscribedW = (2 * sensorRadius) / Math.sqrt(1 + 1 / (aspect * aspect));
     const inscribedH = inscribedW / aspect;
 
-    // Scale to fit the canvas display area (max 92% of screen edge)
-    const scaleToFit = Math.min(
-        (canvasW * 0.92) / inscribedW,
-        (canvasH * 0.92) / inscribedH
+    // displayScale maps sensor pixels -> screen pixels so frame fits in 88% of screen
+    const displayScale = Math.min(
+        (canvasW * 0.88) / inscribedW,
+        (canvasH * 0.88) / inscribedH
     );
+    const frameW = inscribedW * displayScale;
+    const frameH = inscribedH * displayScale;
 
-    const frameW = inscribedW * scaleToFit;
-    const frameH = inscribedH * scaleToFit;
-
-    // Video fill scale: video covers full canvas (like background-size: cover)
-    const videoFillScale = Math.max(canvasW / videoW, canvasH / videoH);
+    // videoFillScale = displayScale ensures sensorRadius on screen == frame circumradius
+    // meaning: at ANY rotation angle, video always covers the frame fully. Zero black bars.
+    const videoFillScale = displayScale;
 
     _stableCache = { frameW, frameH, videoFillScale, sensorRadius, inscribedW, inscribedH };
     _stableCacheKey = key;

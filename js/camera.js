@@ -1,27 +1,34 @@
 // ============================================================
-// camera.js — Lens detection & Square Sensor Constraints (v3.5)
+// camera.js — Camera (v3.5 — Native 4:3 Sensor)
 // ============================================================
 
 /**
- * WHY SQUARE SENSOR:
- * We need the camera to deliver a square (or as-square-as-possible) frame
- * so that when we rotate the video by any angle, we NEVER see black edges
- * outside the inscribed circle. The renderer uses min(W,H)/2 as the safe
- * radius regardless of what the browser actually delivers.
+ * CONCEITO CORRETO (como a Samsung faz):
+ *
+ *  [Sensor físico 4:3]
+ *       ↓
+ *  Círculo inscrito no 4:3  (raio = altura/2, pois altura é o lado menor)
+ *       ↓
+ *  Maior 16:9 que cabe DENTRO desse círculo  ← esse é o frame de output
+ *       ↓
+ *  Girar o sensor virtualmente = nunca sai do círculo = zero fita preta
+ *
+ * Portanto: NÃO pedimos sensor quadrado.
+ * Pedimos a MÁXIMA RESOLUÇÃO 4:3 que o dispositivo suporta.
+ * O renderer.js usa min(W,H)/2 como raio — correto para 4:3.
  */
 
 async function getCameras() {
     try {
-        // Request permission first with minimal constraints
+        // Pede permissão com constraint mínima
         let tempStream;
         try {
             tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         } catch (e) {
             try { tempStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
-            catch (e2) { console.error("Camera permission denied", e2); return; }
+            catch (e2) { console.error('Permissão de câmera negada', e2); return; }
         }
 
-        // Wait for device list to populate after permission grant
         await new Promise(r => setTimeout(r, 700));
         let devices = await navigator.mediaDevices.enumerateDevices();
 
@@ -30,7 +37,7 @@ async function getCameras() {
 
         devices = await navigator.mediaDevices.enumerateDevices();
 
-        // Prefer back cameras
+        // Prefere câmeras traseiras
         let backCameras = devices.filter(d =>
             d.kind === 'videoinput' && (
                 d.label.toLowerCase().includes('back') ||
@@ -56,7 +63,6 @@ async function getCameras() {
             return { ...device, friendlyName, type, rawLabel: label };
         });
 
-        // Flip button cycles through cameras
         btnFlipCamera.onclick = () => {
             const v = window.state;
             if (v.videoDevices.length > 1) {
@@ -77,7 +83,6 @@ async function getCameras() {
 }
 
 async function startCamera(deviceId = null) {
-    // Stop previous stream
     if (window.state.currentStream) {
         window.state.currentStream.getTracks().forEach(t => t.stop());
         window.state.currentStream = null;
@@ -90,28 +95,26 @@ async function startCamera(deviceId = null) {
     }
     window.state.currentDeviceId = deviceId;
 
-    // ── SQUARE SENSOR CONSTRAINT CHAIN ──────────────────────────────────────
-    // Attempt 1: Perfect square 1080x1080 @ 60fps
-    // Attempt 2: Square 1080x1080 @ 30fps
-    // Attempt 3: Largest square the device supports (no size hint)
-    // Attempt 4: Any video (renderer handles it with inscribed-circle math)
-    // ────────────────────────────────────────────────────────────────────────
-
-    const baseConstraints = deviceId
+    const baseId = deviceId
         ? { deviceId: { exact: deviceId } }
         : { facingMode: 'environment' };
 
+    // ── CADEIA DE CONSTRAINTS ─────────────────────────────────────────────
+    // Sempre pedimos 4:3 nativo — que é o formato físico real do sensor.
+    // Alta resolução = círculo inscrito maior = mais espaço pro 16:9 rotacionado.
+    // NUNCA pedimos quadrado: isso força o browser a fazer crop/scale desnecessário.
+    // ─────────────────────────────────────────────────────────────────────
     const attempts = [
-        // Try square at 60fps
-        { ...baseConstraints, width: { ideal: 1080 }, height: { ideal: 1080 }, aspectRatio: { exact: 1.0 }, frameRate: { ideal: 60 } },
-        // Try square at 30fps
-        { ...baseConstraints, width: { ideal: 1080 }, height: { ideal: 1080 }, aspectRatio: { exact: 1.0 }, frameRate: { ideal: 30 } },
-        // Square without exact aspect ratio
-        { ...baseConstraints, width: { ideal: 1080 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-        // Any square-ish
-        { ...baseConstraints, width: { ideal: 1080 }, height: { ideal: 1080 } },
-        // Pure fallback
-        { ...baseConstraints }
+        // Melhor caso: 4:3 em alta res + 60fps
+        { ...baseId, width: { ideal: 3840 }, height: { ideal: 2880 }, aspectRatio: { ideal: 4/3 }, frameRate: { ideal: 60 } },
+        // 4:3 full HD
+        { ...baseId, width: { ideal: 1920 }, height: { ideal: 1440 }, aspectRatio: { ideal: 4/3 }, frameRate: { ideal: 60 } },
+        // 4:3 sem fps específico
+        { ...baseId, width: { ideal: 1920 }, height: { ideal: 1440 }, aspectRatio: { ideal: 4/3 } },
+        // 4:3 básico
+        { ...baseId, aspectRatio: { ideal: 4/3 }, frameRate: { ideal: 30 } },
+        // Qualquer coisa (renderer trata)
+        { ...baseId },
     ];
 
     let stream = null;
@@ -123,18 +126,17 @@ async function startCamera(deviceId = null) {
             usedAttempt = i;
             break;
         } catch (err) {
-            console.warn(`Camera attempt ${i + 1} failed:`, err.name);
+            console.warn(`Tentativa ${i + 1} falhou:`, err.name);
         }
     }
 
     if (!stream) {
-        // Absolute last resort
         try {
             stream = await navigator.mediaDevices.getUserMedia({ video: true });
             usedAttempt = 99;
         } catch (err) {
-            console.error('All camera attempts failed:', err);
-            camDebugInfo.innerHTML = 'ERRO: Câmera não disponível';
+            console.error('Todas as tentativas falharam:', err);
+            camDebugInfo.innerHTML = 'ERRO: Câmera indisponível';
             return;
         }
     }
@@ -146,13 +148,24 @@ async function startCamera(deviceId = null) {
     video.onloadedmetadata = async () => {
         await video.play();
         const settings = stream.getVideoTracks()[0].getSettings();
-        const isSquare = Math.abs(settings.width - settings.height) < 20;
-        camDebugInfo.innerHTML =
-            `Sensor: ${settings.width}x${settings.height} @ ${Math.round(settings.frameRate || 0)}fps` +
-            ` [A${usedAttempt + 1}]${isSquare ? ' ✓SQ' : ' ⚠ non-sq'}`;
+        const W = settings.width || video.videoWidth;
+        const H = settings.height || video.videoHeight;
+        const aspectStr = W && H ? (W/H).toFixed(3) : '?';
 
-        // Invalidate renderer cache to pick up new sensor dimensions
+        // Raio do círculo inscrito = metade do lado MENOR (altura em 4:3 landscape)
+        const R = Math.min(W, H) / 2;
+        // 16:9 máximo dentro desse círculo
+        const outW = (2 * R) / Math.sqrt(1 + (9/16)*(9/16));
+        const outH = outW * (9/16);
+
+        camDebugInfo.innerHTML =
+            `Sensor: ${W}x${H} (${aspectStr}) | ` +
+            `R=${Math.round(R)}px | ` +
+            `Output: ${Math.round(outW)}x${Math.round(outH)} | A${usedAttempt + 1}`;
+
+        // Invalida cache do renderer para recalcular com novo sensor
         if (typeof _stableCache !== 'undefined') _stableCache = null;
+        if (typeof _stableCacheKey !== 'undefined') _stableCacheKey = '';
 
         applyManualSettings();
     };
@@ -187,6 +200,6 @@ async function applyManualSettings() {
             await track.applyConstraints({ advanced: [advanced] });
         }
     } catch (e) {
-        console.warn('applyManualSettings error:', e);
+        console.warn('applyManualSettings:', e);
     }
 }
