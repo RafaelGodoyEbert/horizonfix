@@ -130,23 +130,22 @@ video {
 }
 
 .horizon-line {
-    width: 200px; /* Wider to span the frame */
-    height: 1px;
+    width: 120px;
+    height: 2px;
     background-color: var(--primary);
     position: absolute;
-    box-shadow: 0 0 10px var(--primary);
-    border-radius: 1px;
-    transition: transform 0.05s linear; /* Faster transition for instant feedback */
-    opacity: 0.8;
+    box-shadow: 0 0 8px var(--primary);
+    border-radius: 2px;
+    transition: transform 0.1s linear;
 }
 
 .horizon-line::after,
 .horizon-line::before {
     content: '';
     position: absolute;
-    top: -4px;
-    width: 1px;
-    height: 10px;
+    top: -5px;
+    width: 2px;
+    height: 12px;
     background-color: var(--primary);
 }
 
@@ -175,21 +174,6 @@ video {
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
-    max-height: 60vh; /* Allow scrolling if many controls */
-    overflow-y: auto;
-    padding-right: 5px; /* Space for scrollbar */
-}
-
-/* Custom Scrollbar for a premium look */
-.controls-panel::-webkit-scrollbar {
-    width: 4px;
-}
-.controls-panel::-webkit-scrollbar-track {
-    background: transparent;
-}
-.controls-panel::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
 }
 
 .controls-panel.expanded {
@@ -590,29 +574,4 @@ select.camera-select option {
     background: rgba(255, 255, 255, 0.8);
     border-radius: 50%;
     transform: translate(-50%, -50%);
-}
-
-/* --- QUADRO VIVO (LIVE FRAME) STYLES --- */
-.live-frame-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 5;
-}
-
-/* Vergalhão - Enhanced Central Line */
-.vergalhao-central {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 40px;
-    height: 2px;
-    background-color: #fff;
-    transform: translate(-50%, -50%);
-    box-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
-    border-radius: 1px;
-    z-index: 6;
 }

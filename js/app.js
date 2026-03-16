@@ -1,11 +1,12 @@
 // ============================================================
-// app.js — Global State & Initialization (v3.3)
+// app.js — Global State & Initialization (v4.0)
 // ============================================================
 
 // --- SHARED STATE (Visible across all scripts) ---
 window.state = {
     currentRoll: 0,
     targetRoll: 0,
+    angularVelocity: 0, // deg/sec for adaptive filtering
     isHorizonLockActive: true,
     isOisLockActive: false,
     zoomFactor: 1.0,
@@ -42,6 +43,9 @@ const horizonToggle = document.getElementById('horizon-toggle');
 const btnFlipCamera = document.getElementById('btn-flip-camera');
 const settingsToggle = document.getElementById('settings-toggle');
 const controlsPanel = document.getElementById('controls-panel');
+const horizonLine = document.getElementById('horizon-line');
+const leveler = document.getElementById('leveler');
+
 const shutterToggle = document.getElementById('shutter-toggle');
 const shutterSlider = document.getElementById('shutter-slider');
 const shutterVal = document.getElementById('shutter-val');
@@ -62,25 +66,37 @@ let fpsFrameCount = 0;
 let fpsLastTime = performance.now();
 let fpsDisplay = 0;
 
-// Sensor Debug
+// Legacy/Debug state
 let sensorEventCount = 0;
 let lastBeta = 0, lastGamma = 0;
 
+// Fix viewport height for mobile browsers that messes up CSS
+function fixViewportHeight() {
+    document.body.style.height = window.innerHeight + 'px';
+    document.documentElement.style.height = window.innerHeight + 'px';
+}
+window.addEventListener('resize', fixViewportHeight);
+fixViewportHeight();
+
 // Initialize Web App
 btnStart.addEventListener('click', async () => {
-    // Permissions (Sensors)
+    // Request permissions for Sensors (crucial for iOS 13+)
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try { await DeviceOrientationEvent.requestPermission(); } catch (e) {}
-    }
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        try { await DeviceMotionEvent.requestPermission(); } catch (e) {}
+        try {
+            const permissionState = await DeviceOrientationEvent.requestPermission();
+            if (permissionState !== 'granted') {
+                alert("Permissão de sensor negada. O Horizonte Fixo precisa do giroscópio para funcionar.");
+                return;
+            }
+        } catch (error) {
+            console.error("Erro ao pedir permissão de sensor", error);
+        }
     }
 
     // Attach Sensor Listeners
+    window.addEventListener('deviceorientation', handleOrientation, true);
     if ('ondeviceorientationabsolute' in window) {
         window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-    } else {
-        window.addEventListener('deviceorientation', handleOrientation, true);
     }
     window.addEventListener('devicemotion', handleMotion, true);
 
@@ -88,18 +104,17 @@ btnStart.addEventListener('click', async () => {
     window.state.isHorizonLockActive = horizonToggle.checked;
     window.state.zoomFactor = parseFloat(zoomSlider.value);
 
-    // Start
+    // Hide overlay
     startOverlay.style.opacity = '0';
-    setTimeout(() => { startOverlay.style.display = 'none'; }, 500);
+    setTimeout(() => {
+        startOverlay.style.display = 'none';
+        if (leveler) leveler.style.display = window.state.isHorizonLockActive ? 'flex' : 'none';
+    }, 500);
 
+    // Fetch cameras and start
     await getCameras();
     await startCamera();
-    draw(); // Start loop
-});
 
-// Simple Viewport Fix
-function fixViewport() {
-    document.body.style.height = window.innerHeight + 'px';
-}
-window.addEventListener('resize', fixViewport);
-fixViewport();
+    // Start render loop
+    draw();
+});
