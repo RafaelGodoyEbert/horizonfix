@@ -4,25 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Horizonte Fixo | PRO Camera</title>
+    <title>Horizonte Fixo | ULTRA v4.0</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=3.4">
 
-    <!-- Video Duration Fixer (For WhatsApp Compatibility - Supports H.264) -->
+    <!-- Video Duration Fixer -->
     <script src="https://cdn.jsdelivr.net/npm/webm-duration-fix@1.0.4/lib/index.js"></script>
 </head>
 
 <body>
 
-    <!-- Video tag to capture stream -->
     <video id="video-source" playsinline autoplay muted></video>
-
-    <!-- Canvas to render the manipulated frames -->
     <canvas id="viewfinder"></canvas>
 
-    <!-- UI Overlay -->
     <div id="ui-layer">
-        <!-- Visual Focus Reticle (Moved INSIDE UI Layer to ensure it rests above the canvas but under buttons) -->
         <div id="focus-point" class="focus-point"></div>
         <div class="top-bar">
             <div class="status-badge">
@@ -31,25 +26,36 @@
             </div>
 
             <!-- DEBUG INFO -->
-            <div style="font-size: 10px; color: #0f0; background: rgba(0,0,0,0.5); padding: 5px; position: absolute; left: 10px; top: 70px; z-index: 1000;"
+            <div style="font-size: 9px; color: #0f0; background: rgba(0,0,0,0.6); padding: 5px; position: absolute; left: 10px; top: 10px; z-index: 1000; pointer-events: none; border-radius: 4px;"
                 id="debug-info">
-                Debug...
+                ULTRA v4.0 Caching...
             </div>
             <!-- CAM DEBUG INFO -->
-            <div style="font-size: 10px; color: #ff0; background: rgba(0,0,0,0.5); padding: 5px; position: absolute; left: 10px; top: 150px; z-index: 1000;"
+            <div style="font-size: 9px; color: #ff0; background: rgba(0,0,0,0.6); padding: 5px; position: absolute; left: 10px; top: 40px; z-index: 1000; pointer-events: none; border-radius: 4px;"
                 id="cam-debug-info">
-                Cam Debug...
+                Cam Check...
             </div>
 
-            <!-- Camera Switch Button -->
-            <button id="btn-flip-camera"
-                style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12A9 9 0 0 0 6 5.3L3 8" />
-                    <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
-                </svg>
-            </button>
+            <div style="display: flex; gap: 10px;">
+                <!-- Aspect Ratio Toggle -->
+                <button id="btn-aspect-toggle"
+                    style="width: 48px; height: 48px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto; color: white; transition: all 0.2s;">
+                    <div style="display: flex; flex-direction: column; align-items: center;">
+                        <span id="aspect-label" style="font-size: 8px; font-weight: bold;">16:9</span>
+                        <div id="aspect-icon" style="width: 14px; height: 10px; border: 1.5px solid white; margin-top: 2px;"></div>
+                    </div>
+                </button>
+
+                <!-- Camera Switch -->
+                <button id="btn-flip-camera"
+                    style="width: 48px; height: 48px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12A9 9 0 0 0 6 5.3L3 8" />
+                        <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <div class="recording-time" id="recording-time">
@@ -64,59 +70,77 @@
         </div>
 
         <div id="focus-square"></div>
-        <div id="focus-point" class="focus-point"></div>
 
         <button id="settings-toggle">⚙️</button>
 
         <div class="controls-panel" id="controls-panel">
             <div class="control-card">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-                    <div class="control-label">Zoom / Recorte</div>
+                    <div class="control-label">Zoom Digital</div>
                     <div class="control-value" id="zoom-val">1.0x</div>
                 </div>
                 <input type="range" id="zoom-slider" min="0.5" max="3.0" step="0.1" value="1.0">
             </div>
 
-            <!-- Horizon Lock Toggle -->
-            <div class="control-card" style="display: flex; justify-content: space-between; align-items: center;">
-                <div class="control-label">
-                    Horizonte Fixo
-                    <small style="display: block;">Estabiliza a imagem usando o Giroscópio (Software)</small>
+            <!-- Shutter -->
+            <div class="control-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="control-label">Shutter Speed</div>
+                    <label class="switch">
+                        <input type="checkbox" id="shutter-toggle">
+                        <span class="slider"></span>
+                    </label>
                 </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="control-value" id="shutter-val">Auto</div>
+                    <input type="range" id="shutter-slider" min="1" max="1000" step="1" value="120" disabled style="width: 60%;">
+                </div>
+            </div>
+
+            <!-- ISO -->
+            <div class="control-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="control-label">ISO</div>
+                    <label class="switch">
+                        <input type="checkbox" id="iso-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="control-value" id="iso-val">Auto</div>
+                    <input type="range" id="iso-slider" min="50" max="3200" step="10" value="800" disabled style="width: 60%;">
+                </div>
+            </div>
+
+            <!-- Horizon Lock -->
+            <div class="control-card" style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="control-label">Horizon Lock (v4.0)</div>
                 <label class="switch">
                     <input type="checkbox" id="horizon-toggle" checked>
                     <span class="slider"></span>
                 </label>
             </div>
 
-            <!-- Hardware OIS Toggle -->
+            <!-- Hardware OIS -->
             <div class="control-card" style="display: flex; justify-content: space-between; align-items: center;">
-                <div class="control-label">
-                    OIS Mecânico
-                    <small style="display: block;">Força estabilização na lente física (Pode travar a troca de
-                        lentes no Android)</small>
-                </div>
+                <div class="control-label">OIS Mecânico</div>
                 <label class="switch">
-                    <input type="checkbox" id="ois-toggle"> <!-- Default false to avoid bugs -->
+                    <input type="checkbox" id="ois-toggle">
                     <span class="slider"></span>
                 </label>
             </div>
-        </div> <!-- END controls-panel -->
+        </div>
 
         <div class="bottom-controls">
-            <div style="display: flex; justify-content: center; margin-top: 10px; pointer-events: auto;">
-                <button class="btn-record" id="btn-record">
-                    <div class="record-inner"></div>
-                </button>
-            </div>
+            <button class="btn-record" id="btn-record">
+                <div class="record-inner"></div>
+            </button>
         </div>
-    </div> <!-- END ui-layer -->
+    </div>
 
     <!-- Initialization Screen -->
-    <!-- Moved OUTSIDE ui-layer so it doesn't inherit pointer-events: none -->
     <div class="overlay-start" id="start-overlay">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="url(#gradient)" stroke-width="1.5"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 20px;">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="url(#gradient)" stroke-width="1.5" style="margin-bottom: 20px;">
             <defs>
                 <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stop-color="#00f2fe" />
@@ -127,27 +151,22 @@
             <circle cx="12" cy="13" r="3" />
         </svg>
 
-        <h1>Horizonte Fixo</h1>
-        <p class="desc">Replicação da funcionalidade de estabilização extrema de vídeo em tempo real no navegador.
-        </p>
+        <h1>Horizonte Fixo v4.0</h1>
+        <p class="desc">Tecnologia Ultra-Shield para estabilização absoluta.</p>
 
         <button class="btn-primary" id="btn-start">
-            Ativar Câmera e Sensores
+            Ativar Sistema (v4.0)
         </button>
-
-        <div class="camera-select-wrapper hidden" id="cam-select-wrapper">
-            <select class="camera-select" id="camera-select"></select>
-        </div>
     </div>
 
-    <!-- JavaScript modules (order matters! app.js first defines globals) -->
-    <script src="js/app.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/sensors.js"></script>
-    <script src="js/focus.js"></script>
-    <script src="js/camera.js"></script>
-    <script src="js/recording.js"></script>
-    <script src="js/renderer.js"></script>
+    <!-- CACHE-BUSTING SCRIPT LOADING (v3.4) -->
+    <script src="js/app.js?v=3.4"></script>
+    <script src="js/ui.js?v=3.4"></script>
+    <script src="js/sensors.js?v=3.4"></script>
+    <script src="js/focus.js?v=3.4"></script>
+    <script src="js/camera.js?v=3.4"></script>
+    <script src="js/recording.js?v=3.4"></script>
+    <script src="js/renderer.js?v=3.4"></script>
 </body>
 
 </html>
