@@ -153,7 +153,7 @@ function drawStaticHUD(ctx, width, height, dims, isViewfinder) {
 /**
  * Main Rendering Loop
  */
-function draw(timestamp) {
+function draw(timestamp, metadata) {
     const s = window.state;
     const dW = window.innerWidth;
     const dH = window.innerHeight;
@@ -175,7 +175,7 @@ function draw(timestamp) {
 
     // ── 2. The "Secret": Interpolation + Adaptive Filtering
     // We use the frame timestamp (from rVFC or rAF) to look up the EXACT historical angle
-    const targetTimestamp = timestamp || performance.now();
+    const targetTimestamp = (metadata && metadata.presentationTime) || timestamp || performance.now();
     const exactTargetRoll = getInterpolatedRoll(targetTimestamp);
 
     // Dynamic Tau: Higher rotation speed = faster response (less smoothing)

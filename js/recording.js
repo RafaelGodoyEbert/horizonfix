@@ -1,5 +1,5 @@
 // ============================================================
-// recording.js — Video Capture (v3.3)
+// recording.js — Video Capture (v4.0)
 // ============================================================
 
 function startRecording() {
@@ -40,7 +40,7 @@ function startRecording() {
         const fullBlob = new Blob(recordedChunks, { type: 'video/webm' });
         
         // WhatsApp/Browser Fix: Inject duration
-        const fixedBlob = await ysFixWebmDuration(fullBlob);
+        const fixedBlob = await fixWebmDuration(fullBlob);
         
         const url = URL.createObjectURL(fixedBlob);
         const a = document.createElement('a');
