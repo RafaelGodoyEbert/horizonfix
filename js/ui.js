@@ -44,8 +44,6 @@ if (btnAspectToggle) {
             aspectIcon.style.width = "12px";
             aspectIcon.style.height = "8px";
         }
-        // Invalidate renderer stable cache so frame recalculates immediately
-        if (typeof _stableCache !== 'undefined') { _stableCache = null; }
         console.log("UI: Aspect switch to", window.state.recAspectRatio);
     });
 }
