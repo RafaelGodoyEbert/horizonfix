@@ -6,6 +6,7 @@
 window.state = {
     currentRoll: 0,
     targetRoll: 0,
+    angularVelocity: 0, // deg/sec for adaptive filtering
     isHorizonLockActive: true,
     isOisLockActive: false,
     zoomFactor: 1.0,

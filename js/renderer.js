@@ -153,19 +153,18 @@ function drawStaticHUD(ctx, width, height, dims, isViewfinder) {
 /**
  * Main Rendering Loop
  */
-function draw() {
+function draw(timestamp) {
     const s = window.state;
     const dW = window.innerWidth;
     const dH = window.innerHeight;
 
-    // Resize canvas to match screen (invalidates frame cache)
+    // ── 1. Resize & Cache management
     if (canvas.width !== dW || canvas.height !== dH) {
         canvas.width = dW;
         canvas.height = dH;
         _stableCache = null;
     }
 
-    // Cache video dimensions (invalidate frame cache only when sensor size changes)
     if (video.readyState >= 2 && video.videoWidth > 0) {
         if (s.cachedVideoW !== video.videoWidth || s.cachedVideoH !== video.videoHeight) {
             s.cachedVideoW = video.videoWidth;
@@ -174,28 +173,49 @@ function draw() {
         }
     }
 
-    // Smooth roll — 0.08 = cinematic stability, low jitter
-    s.currentRoll = lerpAngle(s.currentRoll, s.targetRoll, 0.08);
+    // ── 2. The "Secret": Interpolation + Adaptive Filtering
+    // We use the frame timestamp (from rVFC or rAF) to look up the EXACT historical angle
+    const targetTimestamp = timestamp || performance.now();
+    const exactTargetRoll = getInterpolatedRoll(targetTimestamp);
+
+    // Dynamic Tau: Higher rotation speed = faster response (less smoothing)
+    // velocity is in deg/sec. Base 0.05, max 1.0.
+    const baseTau = 0.05;
+    const velocityScale = 0.005; // Adjust this to tune responsiveness
+    const dynamicTau = Math.min(1.0, baseTau + (s.angularVelocity * velocityScale));
+
+    s.currentRoll = lerpAngle(s.currentRoll, exactTargetRoll, dynamicTau);
     angleText.innerText = Math.abs(s.currentRoll).toFixed(1) + '°';
 
-    // FPS counter
+    // ── 3. FPS & Debug
     const now = performance.now();
     if (now - fpsLastTime >= 500) {
         fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
         fpsFrameCount = 0;
         fpsLastTime = now;
-        debugInfo.innerHTML = `V3.5 | FPS:${fpsDisplay} | ${s.cachedVideoW}x${s.cachedVideoH} | R:${s.currentRoll.toFixed(1)}°`;
+        debugInfo.innerHTML = `V4.0 | FPS:${fpsDisplay} | Tau:${dynamicTau.toFixed(3)} | V:${Math.round(s.angularVelocity)}°/s`;
     }
     fpsFrameCount++;
 
-    // Render viewfinder
+    // ── 4. Render
     renderToCtx(ctx, canvas.width, canvas.height, true);
 
-    // Render recording canvas
     if (s.isRecording) {
         const rCtx = recCanvas.getContext('2d', { alpha: false });
         renderToCtx(rCtx, recCanvas.width, recCanvas.height, false);
     }
 
+    // Use requestVideoFrameCallback if available for ultra-sync, otherwise rAF
+    if (video.requestVideoFrameCallback) {
+        video.requestVideoFrameCallback(draw);
+    } else {
+        animationId = requestAnimationFrame(draw);
+    }
+}
+
+// Start the loop
+if (video.requestVideoFrameCallback) {
+    video.requestVideoFrameCallback(draw);
+} else {
     animationId = requestAnimationFrame(draw);
 }
