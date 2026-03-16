@@ -1,7 +1,6 @@
 // recording.js — Video Capture (v4.0)
 // ============================================================
 
-// Recording logic
 const btnRecord = document.getElementById('btn-record');
 const recordingTime = document.getElementById('recording-time');
 const timeDisplay = document.getElementById('time-display');
@@ -18,7 +17,7 @@ function startRecording() {
     recordedChunks = [];
     const s = window.state;
 
-    // Set recording resolution based on selected Aspect Ratio (16:9 / 9:16)
+    // Aspect Ratio Logic
     if (s.recAspectRatio > 1) {
         recCanvas.width = 1920;
         recCanvas.height = 1080;
@@ -32,7 +31,7 @@ function startRecording() {
         document.body.appendChild(recCanvas);
     }
 
-    const canvasStream = recCanvas.captureStream(60);
+    const stream = recCanvas.captureStream(60);
     const mimeTypes = [
         'video/webm;codecs=h264',
         'video/webm;codecs=vp8',
@@ -49,11 +48,11 @@ function startRecording() {
 
     try {
         const options = chosenMime ? { mimeType: chosenMime, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 };
-        mediaRecorder = new MediaRecorder(canvasStream, options);
+        mediaRecorder = new MediaRecorder(stream, options);
 
-        mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) {
-                recordedChunks.push(e.data);
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
             }
         };
 
@@ -87,21 +86,21 @@ function stopRecording() {
 
 function updateRecordingTime() {
     const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-    const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
-    const seconds = (elapsed % 60).toString().padStart(2, '0');
-    timeDisplay.innerText = `${minutes}:${seconds}`;
+    const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+    const s = (elapsed % 60).toString().padStart(2, '0');
+    timeDisplay.innerText = `${m}:${s}`;
 }
 
 async function saveVideo() {
     const fullBlob = new Blob(recordedChunks, { type: 'video/webm' });
     
-    // Use the fix library correctly
     let fixedBlob = fullBlob;
     if (typeof fixWebmDuration !== 'undefined') {
         try {
+            // fixWebmDuration is the primary function name in the library
             fixedBlob = await fixWebmDuration(fullBlob);
         } catch (e) {
-            console.warn("Fix failed:", e);
+            console.warn("Duration fix failed:", e);
         }
     }
 

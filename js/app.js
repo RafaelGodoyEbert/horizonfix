@@ -1,6 +1,5 @@
 // ============================================================
-// app.js — Global variables, DOM references, and initialization
-// This file must be loaded LAST (depends on all other modules)
+// app.js — Global State & Initialization (v4.0)
 // ============================================================
 
 // --- SHARED STATE (Visible across all scripts) ---
@@ -92,37 +91,24 @@ btnStart.addEventListener('click', async () => {
         } catch (error) {
             console.error("Erro ao pedir permissão de sensor", error);
         }
-
-        // Also try for DeviceMotionEvent
-        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-            try {
-                await DeviceMotionEvent.requestPermission();
-            } catch (error) {
-                console.error("Erro ao pedir permissão de devicemotion", error);
-            }
-        }
     }
 
-    // Request sensor permissions for Chrome Android (Permissions API)
-    try {
-        if (navigator.permissions && navigator.permissions.query) {
-            const accel = await navigator.permissions.query({ name: 'accelerometer' }).catch(() => null);
-            const gyro = await navigator.permissions.query({ name: 'gyroscope' }).catch(() => null);
-        }
-    } catch (e) { /* Some browsers don't support these permission names */ }
-
-    // Listen to BOTH events as fallback - some Chrome versions only fire one or the other
+    // Attach Sensor Listeners
     window.addEventListener('deviceorientation', handleOrientation, true);
     if ('ondeviceorientationabsolute' in window) {
         window.addEventListener('deviceorientationabsolute', handleOrientation, true);
     }
     window.addEventListener('devicemotion', handleMotion, true);
 
+    // Initial state sync from UI
+    window.state.isHorizonLockActive = horizonToggle.checked;
+    window.state.zoomFactor = parseFloat(zoomSlider.value);
+
     // Hide overlay
     startOverlay.style.opacity = '0';
     setTimeout(() => {
         startOverlay.style.display = 'none';
-        leveler.style.display = isHorizonLockActive ? 'flex' : 'none';
+        if (leveler) leveler.style.display = window.state.isHorizonLockActive ? 'flex' : 'none';
     }, 500);
 
     // Fetch cameras and start
