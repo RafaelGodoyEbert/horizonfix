@@ -62,10 +62,8 @@ function renderToCtx(context, width, height) {
 }
 
 // The Magic Rendering Loop
-function draw() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        // Match canvas to CSS pixel size (NOT physical pixels)
-        // Using window.innerWidth/Height gives small, fast canvas sizes
+function draw(timestamp, metadata) {
+    if (video.readyState >= video.HAVE_ENOUGH_DATA) {
         const displayWidth = window.innerWidth;
         const displayHeight = window.innerHeight;
 
@@ -74,31 +72,48 @@ function draw() {
             canvas.height = displayHeight;
         }
 
-        // Smooth the rotation angle using lerp (0.8 = 80% interpolation per frame)
-        // Higher value = faster/snappier, Lower value = smoother/slower
-        currentRoll = lerpAngle(currentRoll, targetRoll, 0.8);
+        // ── Interpolation + Adaptive Filtering
+        // We use the frame timestamp (from rVFC or rAF) for the EXACT historical angle
+        const targetTimestamp = (metadata && metadata.presentationTime) || timestamp || performance.now();
+        const exactTargetRoll = getInterpolatedRoll(targetTimestamp);
 
-        // FPS counter — update every 500ms to minimize overhead
+        // Dynamic Tau: Higher rotation speed = faster response (less smoothing)
+        const baseTau = 0.05;
+        const velocityScale = 0.005; 
+        const dynamicTau = Math.min(1.0, baseTau + ((window.state.angularVelocity || 0) * velocityScale));
+
+        window.state.currentRoll = lerpAngle(window.state.currentRoll || 0, exactTargetRoll, dynamicTau);
+
+        // FPS counter
         fpsFrameCount++;
         const now = performance.now();
         if (now - fpsLastTime >= 500) {
             fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
             fpsFrameCount = 0;
             fpsLastTime = now;
-            debugInfo.innerHTML = `FPS: ${fpsDisplay} | Roll: ${Math.round(currentRoll)}°<br>B: ${Math.round(lastBeta)}° G: ${Math.round(lastGamma)}°<br>${canvas.width}x${canvas.height} | Evt: ${sensorEventCount}`;
+            debugInfo.innerHTML = `V4.0 | FPS: ${fpsDisplay} | Tau: ${dynamicTau.toFixed(3)} | V: ${Math.round(window.state.angularVelocity || 0)}°/s`;
         }
 
-        // Update UI text
-        angleText.innerText = Math.abs(currentRoll).toFixed(1) + '°';
-        horizonLine.style.transform = `rotate(${-currentRoll}deg)`;
+        angleText.innerText = Math.abs(window.state.currentRoll).toFixed(1) + '°';
+        if (horizonLine) horizonLine.style.transform = `rotate(${-window.state.currentRoll}deg)`;
 
-        // Render to screen map
         renderToCtx(ctx, canvas.width, canvas.height);
 
-        if (isRecording) {
+        if (window.state.isRecording) {
             renderToCtx(recCtx, recCanvas.width, recCanvas.height);
         }
     }
 
+    if (video.requestVideoFrameCallback) {
+        video.requestVideoFrameCallback(draw);
+    } else {
+        animationId = requestAnimationFrame(draw);
+    }
+}
+
+// Start the loop
+if (video.requestVideoFrameCallback) {
+    video.requestVideoFrameCallback(draw);
+} else {
     animationId = requestAnimationFrame(draw);
 }

@@ -1,5 +1,4 @@
-// ============================================================
-// recording.js — Video recording, saving, and time display
+// recording.js — Video Capture (v4.0)
 // ============================================================
 
 // Recording logic
@@ -8,7 +7,7 @@ const recordingTime = document.getElementById('recording-time');
 const timeDisplay = document.getElementById('time-display');
 
 btnRecord.addEventListener('click', () => {
-    if (!isRecording) {
+    if (!window.state.isRecording) {
         startRecording();
     } else {
         stopRecording();
@@ -17,61 +16,38 @@ btnRecord.addEventListener('click', () => {
 
 function startRecording() {
     recordedChunks = [];
+    const s = window.state;
 
-    // Set exact 1080p 16:9 or 9:16 aspect ratio based on phone orientation.
-    const isPortrait = window.innerHeight > window.innerWidth;
-    if (isPortrait) {
-        recCanvas.width = 1080;
-        recCanvas.height = 1920;
-    } else {
+    // Set recording resolution based on selected Aspect Ratio (16:9 / 9:16)
+    if (s.recAspectRatio > 1) {
         recCanvas.width = 1920;
         recCanvas.height = 1080;
+    } else {
+        recCanvas.width = 1080;
+        recCanvas.height = 1920;
     }
 
-    // Chrome BUG FIX: captureStream() on an unattached canvas often fails or records 0 bytes.
-    // We append it to the body hidden, so the browser graphics engine considers it "active".
-    if (!document.getElementById('hidden-rec-canvas')) {
-        recCanvas.id = 'hidden-rec-canvas';
-        recCanvas.style.position = 'absolute';
-        recCanvas.style.opacity = '0';
-        recCanvas.style.pointerEvents = 'none';
-        recCanvas.style.width = '1px';
-        recCanvas.style.height = '1px';
+    if (!recCanvas.parentElement) {
+        recCanvas.style.display = 'none';
         document.body.appendChild(recCanvas);
     }
 
-    // captureStream() with NO argument = capture a frame each time canvas is painted.
-    // Each frame gets a real-time timestamp matching when it was actually rendered.
-    // captureStream(30) was WRONG: it assigned fixed 1/30s timestamps per frame,
-    // but the canvas paint rate was ~15fps, so 20s of recording only produced
-    // 10s of video content (300 frames × 1/30s = 10s instead of 300 × 1/15s = 20s).
-    // captureStream(30) forces exactly 30fps. The Android Native Gallery HATES variable
-    // frame rate (which happens when you pass no arguments). If frames drop, the gallery
-    // speeds up the video (10s becomes 4s). 30fps guarantees constant timeframe.
-    const canvasStream = recCanvas.captureStream(30);
-
-    // Prioritize WebM (with H.264) for Hardware Acceleration!
-    // We CANNOT use 'video/mp4' as the primary choice because ysFixWebmDuration 
-    // only injects missing duration metadata into WebM containers. Without it, 
-    // Android Gallery and WhatsApp will see a 8s video as 3s.
+    const canvasStream = recCanvas.captureStream(60);
     const mimeTypes = [
-        'video/webm;codecs=h264',   // Standard HW Accelerated on Chrome Android (best for ysFixWebmDuration)
-        'video/webm;codecs=vp8',    // Lighter fallback
-        'video/webm',               // General WebM
-        'video/mp4',                // Fallback (will break duration in Gallery!)
-        ''  // Let browser choose
+        'video/webm;codecs=h264',
+        'video/webm;codecs=vp8',
+        'video/webm'
     ];
 
     let chosenMime = '';
     for (const mime of mimeTypes) {
-        if (mime === '' || MediaRecorder.isTypeSupported(mime)) {
+        if (MediaRecorder.isTypeSupported(mime)) {
             chosenMime = mime;
             break;
         }
     }
 
     try {
-        // Request 8 Mbps (stable for 1080p H264 hardware encoders without dropping frames)
         const options = chosenMime ? { mimeType: chosenMime, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 };
         mediaRecorder = new MediaRecorder(canvasStream, options);
 
@@ -82,54 +58,31 @@ function startRecording() {
         };
 
         mediaRecorder.onstop = () => {
-            // Save video ONLY after MediaRecorder has fully stopped and flushed
             saveVideo();
         };
 
-        mediaRecorder.start(500);
-        isRecording = true;
-
-        // Request Screen Wake Lock
-        if ('wakeLock' in navigator) {
-            navigator.wakeLock.request('screen')
-                .then(lock => { wakeLock = lock; })
-                .catch(err => console.warn('Wake Lock request failed:', err));
-        }
-
-        // UI Updates
-        btnRecord.classList.add('recording');
-        recordingTime.style.display = 'flex';
+        mediaRecorder.start();
+        s.isRecording = true;
         recordingStartTime = Date.now();
         updateRecordingTime();
         recordingInterval = setInterval(updateRecordingTime, 1000);
 
-        const mbps = (options.videoBitsPerSecond / 1000000).toFixed(1);
-        camDebugInfo.innerHTML += `<br>Rec: ${chosenMime ? chosenMime.substring(0, 10) : 'auto'} | ${mbps} Mbps`;
+        btnRecord.classList.add('recording');
+        recordingTime.style.display = 'flex';
 
     } catch (e) {
-        console.error("Exception while creating MediaRecorder:", e);
-        alert("Falha ao iniciar gravação: " + e.message);
+        console.error("Recording error:", e);
     }
 }
 
 function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        isRecording = false;
-
-        // UI Updates
-        btnRecord.classList.remove('recording');
-        recordingTime.style.display = 'none';
-        clearInterval(recordingInterval);
-        timeDisplay.innerText = "00:00";
-
-        // Release Screen Wake Lock
-        if (wakeLock !== null) {
-            wakeLock.release().then(() => { wakeLock = null; });
-        }
-
-        // Stop triggers onstop which calls saveVideo
         mediaRecorder.stop();
     }
+    window.state.isRecording = false;
+    clearInterval(recordingInterval);
+    btnRecord.classList.remove('recording');
+    recordingTime.style.display = 'none';
 }
 
 function updateRecordingTime() {
@@ -139,57 +92,30 @@ function updateRecordingTime() {
     timeDisplay.innerText = `${minutes}:${seconds}`;
 }
 
-function saveVideo() {
-    const rawBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/mp4' });
-    const durationMs = Date.now() - recordingStartTime;
-
-    // Fallback save function in case the fixer script didn't load (AdBlock, etc)
-    const fallbackSave = () => {
-        const url = URL.createObjectURL(rawBlob);
-        const a = document.createElement('a');
-        let ext = 'mp4';
-        if (mediaRecorder.mimeType && mediaRecorder.mimeType.toLowerCase().includes('webm')) ext = 'webm';
-        const date = new Date();
-        const filename = `HorizonRaw_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}_${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.${ext}`;
-        document.body.appendChild(a);
-        a.style = 'display: none';
-        a.href = url;
-        a.download = filename;
-        a.click();
-        setTimeout(() => window.URL.revokeObjectURL(url), 100);
-    };
-
-    // FIX THE METADATA FOR WHATSAPP/GALLERY (Now using webm-duration-fix for H.264 support)
-    if (typeof webmFixDuration !== 'undefined') {
+async function saveVideo() {
+    const fullBlob = new Blob(recordedChunks, { type: 'video/webm' });
+    
+    // Use the fix library correctly
+    let fixedBlob = fullBlob;
+    if (typeof fixWebmDuration !== 'undefined') {
         try {
-            webmFixDuration(rawBlob, durationMs, {logger: false})
-                .then(function (fixedBlob) {
-                    const url = URL.createObjectURL(fixedBlob);
-                    const a = document.createElement('a');
-
-                    let ext = 'mp4';
-                    if (mediaRecorder.mimeType && mediaRecorder.mimeType.toLowerCase().includes('webm')) ext = 'webm';
-
-                    const date = new Date();
-                    const filename = `HorizonFix_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}_${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.${ext}`;
-
-                    document.body.appendChild(a);
-                    a.style = 'display: none';
-                    a.href = url;
-                    a.download = filename;
-                    a.click();
-                    setTimeout(() => window.URL.revokeObjectURL(url), 100);
-                })
-                .catch(function (err) {
-                    console.error("webmFixDuration failed during H.264 processing, falling back to raw save:", err);
-                    fallbackSave();
-                });
-        } catch (err) {
-            console.error("webmFixDuration initial setup failed, falling back to raw save:", err);
-            fallbackSave();
+            fixedBlob = await fixWebmDuration(fullBlob);
+        } catch (e) {
+            console.warn("Fix failed:", e);
         }
-    } else {
-        console.warn("webm-duration-fix library not loaded! Falling back to raw save without duration metadata.");
-        fallbackSave();
     }
+
+    const url = URL.createObjectURL(fixedBlob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    a.download = `HorizonFix-${ts}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 100);
 }
