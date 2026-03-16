@@ -1,104 +1,175 @@
 // ============================================================
-// renderer.js — Canvas rendering and the main draw loop
+// renderer.js — Core Rendering Engine (v4.0)
 // ============================================================
 
-// Draw frame onto a given context
-function renderToCtx(context, width, height) {
-    const centerX = width / 2;
-    const centerY = height / 2;
+/**
+ * ARCHITECTURE v4.0:
+ * - The VIDEO (background) rotates to compensate for device tilt
+ * - The FRAME (white rectangle) stays PERFECTLY STILL on screen
+ * - Frame size is the largest rectangle that fits inside the
+ *   INSCRIBED CIRCLE of the sensor, so rotating video NEVER
+ *   exposes black edges — guaranteed mathematically.
+ */
 
-    // Clear canvas behind
-    context.fillStyle = '#000';
-    context.fillRect(0, 0, width, height);
+// Cached stable frame dimensions — computed ONCE per canvas resize
+let _stableCache = null;
+let _stableCacheKey = '';
 
-    context.save();
-    context.translate(centerX, centerY);
+function getStableFrameDimensions(canvasW, canvasH, videoW, videoH, targetAspect) {
+    const key = `${canvasW}|${canvasH}|${videoW}|${videoH}|${targetAspect.toFixed(4)}`;
+    if (_stableCacheKey === key && _stableCache) return _stableCache;
 
-    if (isHorizonLockActive) {
-        // Rotate the canvas in the opposite direction of the tilt
-        const rad = -currentRoll * (Math.PI / 180);
-        context.rotate(rad);
+    const sensorRadius = Math.min(videoW, videoH) / 2;
+    const aspect = targetAspect;
+    const inscribedW = (2 * sensorRadius) / Math.sqrt(1 + 1 / (aspect * aspect));
+    const inscribedH = inscribedW / aspect;
 
-        // Apply Crop/Zoom to hide black borders caused by rotation
-        context.scale(zoomFactor, zoomFactor);
-    } else {
-        context.scale(1.0, 1.0);
-    }
+    const displayScale = Math.min(
+        (canvasW * 0.88) / inscribedW,
+        (canvasH * 0.88) / inscribedH
+    );
+    const frameW = inscribedW * displayScale;
+    const frameH = inscribedH * displayScale;
+    const videoFillScale = displayScale;
 
-    // FULL DIAGONAL COVERAGE
-    // Draw the video large enough that its shortest side covers the full canvas diagonal.
-    // This ensures no black borders appear at ANY rotation angle.
-    const diagonal = Math.sqrt(width * width + height * height);
+    _stableCache = { frameW, frameH, videoFillScale, sensorRadius, inscribedW, inscribedH };
+    _stableCacheKey = key;
+    return _stableCache;
+}
 
-    // Calculate video base ratio
-    const vW = video.videoWidth;
-    const vH = video.videoHeight;
+function renderToCtx(ctx, width, height, isViewfinder) {
+    const s = window.state;
+    const vW = s.cachedVideoW;
+    const vH = s.cachedVideoH;
 
-    // MATH GUARD: If sensor flips and reports 0x0 momentarily, do not draw and avoid NaN crashes
-    if (!vW || !vH || vW === 0 || vH === 0) {
-        context.restore();
+    if (vW <= 0 || vH <= 0) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
         return;
     }
 
-    const videoRatio = vW / vH;
-    let drawWidth, drawHeight;
+    const targetAspect = s.recAspectRatio || (16 / 9);
+    const dims = getStableFrameDimensions(width, height, vW, vH, targetAspect);
 
-    // We force the drawn video to cover the entire diagonal circle.
-    // This means we crop into the center of the sensor (just like the S26 Ultra does).
-    if (videoRatio > 1) {
-        // Landscape video source
-        drawHeight = diagonal;
-        drawWidth = diagonal * videoRatio;
-    } else {
-        // Portrait video source
-        drawWidth = diagonal;
-        drawHeight = diagonal / videoRatio;
+    const roll = isNaN(s.currentRoll) ? 0 : s.currentRoll;
+    const zoom = isNaN(s.zoomFactor) ? 1.0 : s.zoomFactor;
+    const rad = roll * (Math.PI / 180);
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width, height);
+
+    if (video.readyState >= 2) {
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(rad);
+        ctx.scale(dims.videoFillScale * zoom, dims.videoFillScale * zoom);
+        ctx.drawImage(video, -vW / 2, -vH / 2, vW, vH);
+        ctx.restore();
     }
 
-    // Center the massive video image inside the canvas.
-    // Since we applied context.translate(centerX, centerY) earlier, we draw from -drawWidth/2
-    context.drawImage(video, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-    context.restore();
+    if (s.isHorizonLockActive) {
+        drawStaticHUD(ctx, width, height, dims, isViewfinder);
+    }
 }
 
-// The Magic Rendering Loop
-function draw() {
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        // Match canvas to CSS pixel size (NOT physical pixels)
-        // Using window.innerWidth/Height gives small, fast canvas sizes
-        const displayWidth = window.innerWidth;
-        const displayHeight = window.innerHeight;
+function drawStaticHUD(ctx, width, height, dims, isViewfinder) {
+    const hw = dims.frameW / 2;
+    const hh = dims.frameH / 2;
+    const cx = width / 2;
+    const cy = height / 2;
 
-        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-            canvas.width = displayWidth;
-            canvas.height = displayHeight;
-        }
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(0, 0, width, cy - hh);
+    ctx.fillRect(0, cy + hh, width, height - (cy + hh));
+    ctx.fillRect(0, cy - hh, cx - hw, dims.frameH);
+    ctx.fillRect(cx + hw, cy - hh, width - (cx + hw), dims.frameH);
 
-        // Smooth the rotation angle using lerp (0.8 = 80% interpolation per frame)
-        // Higher value = faster/snappier, Lower value = smoother/slower
-        currentRoll = lerpAngle(currentRoll, targetRoll, 0.8);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - hw, cy - hh, dims.frameW, dims.frameH);
 
-        // FPS counter — update every 500ms to minimize overhead
-        fpsFrameCount++;
-        const now = performance.now();
-        if (now - fpsLastTime >= 500) {
-            fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
-            fpsFrameCount = 0;
-            fpsLastTime = now;
-            debugInfo.innerHTML = `FPS: ${fpsDisplay} | Roll: ${Math.round(currentRoll)}°<br>B: ${Math.round(lastBeta)}° G: ${Math.round(lastGamma)}°<br>${canvas.width}x${canvas.height} | Evt: ${sensorEventCount}`;
-        }
+    const cs = 28;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    // TL
+    ctx.beginPath(); ctx.moveTo(cx - hw + cs, cy - hh); ctx.lineTo(cx - hw, cy - hh); ctx.lineTo(cx - hw, cy - hh + cs); ctx.stroke();
+    // TR
+    ctx.beginPath(); ctx.moveTo(cx + hw - cs, cy - hh); ctx.lineTo(cx + hw, cy - hh); ctx.lineTo(cx + hw, cy - hh + cs); ctx.stroke();
+    // BL
+    ctx.beginPath(); ctx.moveTo(cx - hw + cs, cy + hh); ctx.lineTo(cx - hw, cy + hh); ctx.lineTo(cx - hw, cy + hh - cs); ctx.stroke();
+    // BR
+    ctx.beginPath(); ctx.moveTo(cx + hw - cs, cy + hh); ctx.lineTo(cx + hw, cy + hh); ctx.lineTo(cx + hw, cy + hh - cs); ctx.stroke();
 
-        // Update UI text
-        angleText.innerText = Math.abs(currentRoll).toFixed(1) + '°';
-        horizonLine.style.transform = `rotate(${-currentRoll}deg)`;
+    if (isViewfinder) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 55, cy);
+        ctx.lineTo(cx + 55, cy);
+        ctx.strokeStyle = '#00f2fe';
+        ctx.lineWidth = 3;
+        ctx.stroke();
 
-        // Render to screen map
-        renderToCtx(ctx, canvas.width, canvas.height);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#00f2fe';
+        ctx.fill();
+    }
+}
 
-        if (isRecording) {
-            renderToCtx(recCtx, recCanvas.width, recCanvas.height);
+function draw(timestamp, metadata) {
+    const s = window.state;
+    const dW = window.innerWidth;
+    const dH = window.innerHeight;
+
+    if (canvas.width !== dW || canvas.height !== dH) {
+        canvas.width = dW;
+        canvas.height = dH;
+        _stableCache = null;
+    }
+
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+        if (s.cachedVideoW !== video.videoWidth || s.cachedVideoH !== video.videoHeight) {
+            s.cachedVideoW = video.videoWidth;
+            s.cachedVideoH = video.videoHeight;
+            _stableCache = null;
         }
     }
 
+    const targetTimestamp = (metadata && metadata.presentationTime) || timestamp || performance.now();
+    const exactTargetRoll = getInterpolatedRoll(targetTimestamp);
+
+    const baseTau = 0.05;
+    const velocityScale = 0.005;
+    const dynamicTau = Math.min(1.0, baseTau + ((window.state.angularVelocity || 0) * velocityScale));
+
+    s.currentRoll = lerpAngle(s.currentRoll || 0, exactTargetRoll, dynamicTau);
+    angleText.innerText = Math.abs(s.currentRoll).toFixed(1) + '°';
+
+    const now = performance.now();
+    if (now - fpsLastTime >= 500) {
+        fpsDisplay = Math.round(fpsFrameCount / ((now - fpsLastTime) / 1000));
+        fpsFrameCount = 0;
+        fpsLastTime = now;
+        debugInfo.innerHTML = `V4.0 | FPS: ${fpsDisplay} | Tau: ${dynamicTau.toFixed(3)} | V: ${Math.round(window.state.angularVelocity || 0)}°/s`;
+    }
+    fpsFrameCount++;
+
+    if (horizonLine) horizonLine.style.transform = `rotate(${-s.currentRoll}deg)`;
+
+    renderToCtx(ctx, canvas.width, canvas.height, true);
+
+    if (s.isRecording) {
+        renderToCtx(recCtx, recCanvas.width, recCanvas.height, false);
+    }
+
+    if (video.requestVideoFrameCallback) {
+        video.requestVideoFrameCallback(draw);
+    } else {
+        animationId = requestAnimationFrame(draw);
+    }
+}
+
+if (video.requestVideoFrameCallback) {
+    video.requestVideoFrameCallback(draw);
+} else {
     animationId = requestAnimationFrame(draw);
 }
