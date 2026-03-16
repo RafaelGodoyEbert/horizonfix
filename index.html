@@ -77,44 +77,6 @@
                 <input type="range" id="zoom-slider" min="0.5" max="3.0" step="0.1" value="1.0">
             </div>
 
-            <!-- Shutter Speed / Exposure Time -->
-            <div class="control-card" style="pointer-events: auto; position: relative; z-index: 50;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div class="control-label">
-                        Shutter Speed
-                        <small style="display: block;">Reduz motion blur</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="shutter-toggle" title="Ativar manual">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <small style="color: #bbb;">Modo de operação:</small>
-                    <div class="control-value" id="shutter-val" style="font-weight: bold; color: var(--primary);">Auto</div>
-                </div>
-                <input type="range" id="shutter-slider" min="1" max="1000" step="1" value="120" disabled style="pointer-events: auto;">
-            </div>
-
-            <!-- ISO -->
-            <div class="control-card" style="pointer-events: auto; position: relative; z-index: 50;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div class="control-label">
-                        ISO (Ganho)
-                        <small style="display: block;">Compensação de luz</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="iso-toggle" title="Ativar manual">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <small style="color: #bbb;">Modo de operação:</small>
-                    <div class="control-value" id="iso-val" style="font-weight: bold; color: var(--primary);">Auto</div>
-                </div>
-                <input type="range" id="iso-slider" min="50" max="3200" step="10" value="800" disabled style="pointer-events: auto;">
-            </div>
-
             <!-- Horizon Lock Toggle -->
             <div class="control-card" style="display: flex; justify-content: space-between; align-items: center;">
                 <div class="control-label">
@@ -165,7 +127,7 @@
             <circle cx="12" cy="13" r="3" />
         </svg>
 
-        <h1>Horizonte Fixo v2.3</h1>
+        <h1>Horizonte Fixo</h1>
         <p class="desc">Replicação da funcionalidade de estabilização extrema de vídeo em tempo real no navegador.
         </p>
 

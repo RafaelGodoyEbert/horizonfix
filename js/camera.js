@@ -138,12 +138,8 @@ async function startCamera(deviceId = null) {
     // Hint to the browser to prioritize performance over battery saving (Chrome/Edge)
     // Some implementations might ignore this, but it's the standard API for WebRTC
     try {
-        if (navigator.mediaDevices.getSupportedConstraints) {
-            const supported = navigator.mediaDevices.getSupportedConstraints();
-            if (supported.powerEfficient) videoConstraints.powerEfficient = false;
-            // Native Super Steady hints for Chrome/Android
-            if (supported.videoStabilizationMode) videoConstraints.videoStabilizationMode = "preview";
-            if (supported.videoStabilization) videoConstraints.videoStabilization = true;
+        if (navigator.mediaDevices.getSupportedConstraints && navigator.mediaDevices.getSupportedConstraints().powerEfficient) {
+            videoConstraints.powerEfficient = false;
         }
     } catch(e) {}
 
@@ -206,14 +202,39 @@ async function startCamera(deviceId = null) {
     // Ensure video plays
     try {
         await new Promise((resolve) => {
-            video.onloadedmetadata = async () => {
+            video.onloadedmetadata = () => {
                 video.play();
 
                 // Apply continuous auto-focus and auto-exposure to prevent blown-out images
                 try {
                     const track = currentStream.getVideoTracks()[0];
-                    await applyManualSettings();
+                    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
 
+                    // Highly aggressive focus command based on original source that the user preferred
+                    const advancedConstraints = {};
+                    if (capabilities.focusMode) {
+                        if (capabilities.focusMode.includes('continuous')) {
+                            advancedConstraints.focusMode = 'continuous';
+                        } else if (capabilities.focusMode.includes('auto')) {
+                            advancedConstraints.focusMode = 'auto';
+                        }
+                    }
+
+                    if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
+                        advancedConstraints.exposureMode = 'continuous';
+                    }
+                    if (capabilities.whiteBalanceMode && capabilities.whiteBalanceMode.includes('continuous')) {
+                        advancedConstraints.whiteBalanceMode = 'continuous';
+                    }
+
+                    if (Object.keys(advancedConstraints).length > 0) {
+                        try {
+                            track.applyConstraints({ advanced: [advancedConstraints] });
+                            camDebugInfo.innerHTML += ` | AF: OK`;
+                        } catch (e) {
+                            camDebugInfo.innerHTML += ` | AF: Fail`;
+                        }
+                    }
 
                     // Display Camera Quality Metrics & Hardware Info
                     const trackSettings = track.getSettings();
@@ -236,89 +257,5 @@ async function startCamera(deviceId = null) {
         });
     } catch (err) {
         console.error("Camera playback error:", err);
-    }
-}
-
-async function applyManualSettings() {
-    if (!currentStream) return;
-    try {
-        const track = currentStream.getVideoTracks()[0];
-        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-        const advancedConstraints = {};
-        let hasChanges = false;
-        
-        // Focus fallback
-        if (capabilities.focusMode) {
-            if (capabilities.focusMode.includes('continuous')) {
-                advancedConstraints.focusMode = 'continuous';
-                hasChanges = true;
-            } else if (capabilities.focusMode.includes('auto')) {
-                advancedConstraints.focusMode = 'auto';
-                hasChanges = true;
-            }
-        }
-
-        // Auto White Balance
-        if (capabilities.whiteBalanceMode && capabilities.whiteBalanceMode.includes('continuous')) {
-            advancedConstraints.whiteBalanceMode = 'continuous';
-            hasChanges = true;
-        }
-
-        // Super Steady / Video Stabilization (Advanced)
-        if (capabilities.videoStabilizationMode && capabilities.videoStabilizationMode.includes('preview')) {
-            advancedConstraints.videoStabilizationMode = 'preview';
-            hasChanges = true;
-        }
-
-        // Shutter and ISO Limits
-        if (isShutterManual || isIsoManual) {
-            if (capabilities.exposureMode && capabilities.exposureMode.includes('manual')) {
-                advancedConstraints.exposureMode = 'manual';
-                hasChanges = true;
-            }
-
-            if (isShutterManual && capabilities.exposureTime) {
-                let expTime = shutterValue;
-                if (expTime < capabilities.exposureTime.min) expTime = capabilities.exposureTime.min;
-                if (expTime > capabilities.exposureTime.max) expTime = capabilities.exposureTime.max;
-                advancedConstraints.exposureTime = expTime;
-                hasChanges = true;
-            }
-
-            if (isIsoManual && capabilities.iso) {
-                let isoVal = isoValue;
-                if (isoVal < capabilities.iso.min) isoVal = capabilities.iso.min;
-                if (isoVal > capabilities.iso.max) isoVal = capabilities.iso.max;
-                advancedConstraints.iso = isoVal;
-                hasChanges = true;
-            }
-        } else {
-            // Pure Auto
-            if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
-                advancedConstraints.exposureMode = 'continuous';
-                hasChanges = true;
-            }
-        }
-
-        if (hasChanges) {
-            try {
-                await track.applyConstraints({ advanced: [advancedConstraints] });
-            } catch (e) {
-                console.warn("Failed to apply advanced camera settings:", e);
-            }
-        }
-        
-        // Update the UI bounds dynamically if supported
-        if (capabilities.exposureTime) {
-            shutterSlider.min = capabilities.exposureTime.min || 0;
-            shutterSlider.max = capabilities.exposureTime.max || 10000;
-        }
-        if (capabilities.iso) {
-            isoSlider.min = capabilities.iso.min || 0;
-            isoSlider.max = capabilities.iso.max || 3200;
-        }
-
-    } catch (err) {
-        console.warn('Failed to apply manual settings:', err);
     }
 }

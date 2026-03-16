@@ -74,9 +74,9 @@ function draw() {
             canvas.height = displayHeight;
         }
 
-        // Smooth the rotation angle using lerp (0.8 = 80% interpolation per frame)
+        // Smooth the rotation angle using lerp (0.1 = 10% interpolation per frame)
         // Higher value = faster/snappier, Lower value = smoother/slower
-        currentRoll = lerpAngle(currentRoll, targetRoll, 0.8);
+        currentRoll = lerpAngle(currentRoll, targetRoll, 0.2);
 
         // FPS counter — update every 500ms to minimize overhead
         fpsFrameCount++;
