@@ -1,120 +1,132 @@
-// ============================================================
-// app.js — Global State & Initialization (v4.0)
-// ============================================================
+'use strict';
 
-// --- SHARED STATE (Visible across all scripts) ---
 window.state = {
-    currentRoll: 0,
-    targetRoll: 0,
-    angularVelocity: 0, // deg/sec for adaptive filtering
-    isHorizonLockActive: true,
-    isOisLockActive: false,
-    zoomFactor: 1.0,
-    recAspectRatio: 16 / 9,
-    isShutterManual: false,
-    shutterValue: 120,
-    isIsoManual: false,
-    isoValue: 800,
-    isRecording: false,
-    cachedVideoW: 1920,
-    cachedVideoH: 1080,
-    lastValidVisual: null,
-    videoDevices: [],
-    currentDeviceId: null,
-    currentStream: null
+    currentRoll: 0, targetRoll: 0, calibration: 0, angularVelocity: 0,
+    isHorizonLockActive: true, steady: true, cropMode: 'fixed', smoothing: 30, sensorDelay: 55,
+    zoomFactor: 1, recAspectRatio: 16 / 9, resolution: 1080, fps: 30,
+    audioEnabled: true, grid: false, colorProfile: 'original',
+    isShutterManual: false, isIsoManual: false, shutterValue: 83.33, isoValue: 100,
+    exposure: 0, torch: false, capabilities: {}, videoDevices: [],
+    currentDeviceId: null, currentStream: null, facingMode: 'environment',
+    isRecording: false, recordingBusy: false, cameraBusy: false,
+    started: false, demo: false, demoRoll: 0, outputBlob: null,
+    sensorLastTime: 0, sensorMessage: 'Aguardando sensores', offsetX: 0, offsetY: 0,
+    frameTransform: null, previewFrame: null, cameraMessage: '', fpsActual: 0
 };
-
-// --- DOM References ---
 const video = document.getElementById('video-source');
 const canvas = document.getElementById('viewfinder');
 const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
 const recCanvas = document.createElement('canvas');
 const recCtx = recCanvas.getContext('2d', { alpha: false, desynchronized: true });
-
-const startOverlay = document.getElementById('start-overlay');
-const btnStart = document.getElementById('btn-start');
-const angleText = document.getElementById('angle-text');
-const sensorDot = document.getElementById('sensor-dot');
-const debugInfo = document.getElementById('debug-info');
-const camDebugInfo = document.getElementById('cam-debug-info');
-const zoomSlider = document.getElementById('zoom-slider');
-const zoomVal = document.getElementById('zoom-val');
-const horizonToggle = document.getElementById('horizon-toggle');
-const btnFlipCamera = document.getElementById('btn-flip-camera');
-const settingsToggle = document.getElementById('settings-toggle');
-const controlsPanel = document.getElementById('controls-panel');
-const horizonLine = document.getElementById('horizon-line');
-const leveler = document.getElementById('leveler');
-
-const shutterToggle = document.getElementById('shutter-toggle');
-const shutterSlider = document.getElementById('shutter-slider');
-const shutterVal = document.getElementById('shutter-val');
-const isoToggle = document.getElementById('iso-toggle');
-const isoSlider = document.getElementById('iso-slider');
-const isoVal = document.getElementById('iso-val');
-
-// Global animation ID
-let animationId;
-let recordingStartTime;
-let recordingInterval;
-let mediaRecorder;
-let recordedChunks = [];
 let wakeLock = null;
+let toastTimer;
 
-// FPS Counter
-let fpsFrameCount = 0;
-let fpsLastTime = performance.now();
-let fpsDisplay = 0;
-
-// Legacy/Debug state
-let sensorEventCount = 0;
-let lastBeta = 0, lastGamma = 0;
-
-// Fix viewport height for mobile browsers that messes up CSS
-function fixViewportHeight() {
-    document.body.style.height = window.innerHeight + 'px';
-    document.documentElement.style.height = window.innerHeight + 'px';
+function showToast(message) {
+    const element = document.getElementById('toast');
+    element.textContent = message;
+    element.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { element.hidden = true; }, 5500);
 }
-window.addEventListener('resize', fixViewportHeight);
-fixViewportHeight();
 
-// Initialize Web App
-btnStart.addEventListener('click', async () => {
-    // Request permissions for Sensors (crucial for iOS 13+)
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-            const permissionState = await DeviceOrientationEvent.requestPermission();
-            if (permissionState !== 'granted') {
-                alert("Permissão de sensor negada. O Horizonte Fixo precisa do giroscópio para funcionar.");
-                return;
+async function acquireWakeLock() {
+    if (wakeLock || !navigator.wakeLock || document.hidden) return;
+    try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (_) { /* Screen lock is optional; capture still works. */ }
+}
+
+async function releaseWakeLock() {
+    const previous = wakeLock;
+    wakeLock = null;
+    if (previous) await previous.release().catch(() => {});
+}
+
+function cameraError(error) {
+    const messages = {
+        NotAllowedError: 'Acesso à câmera negado. Autorize a câmera nas permissões deste site e tente novamente.',
+        SecurityError: 'Abra este app por HTTPS ou localhost para permitir câmera e sensores.',
+        NotFoundError: 'Nenhuma câmera encontrada. Você pode testar o app no modo demonstração.',
+        NotReadableError: 'A câmera está ocupada. Feche outro aplicativo que esteja usando a câmera e tente novamente.',
+        OverconstrainedError: 'Esta câmera não aceita a configuração escolhida. Tente outra qualidade.',
+        AbortError: 'A câmera foi interrompida. Tente ativá-la novamente.'
+    };
+    return messages[error.name] || 'Não foi possível iniciar a câmera. Verifique as permissões e tente novamente.';
+}
+
+async function activateApp(demo = false) {
+    const s = window.state;
+    if (s.cameraBusy || s.started) return;
+    const errorElement = document.getElementById('start-error');
+    errorElement.hidden = true;
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-demo').disabled = true;
+    try {
+        if (!demo) {
+            if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+                throw Object.assign(new Error(), { name: 'SecurityError' });
             }
-        } catch (error) {
-            console.error("Erro ao pedir permissão de sensor", error);
+            // Both iOS permission requests originate in the same user gesture.
+            await requestSensors();
+            await startCamera();
+        } else {
+            s.demo = true;
+            s.cameraMessage = 'Demonstração • imagem simulada';
+            s.sensorMessage = 'Inclinação simulada';
+            document.getElementById('demo-controls').hidden = false;
         }
+        s.started = true;
+        document.getElementById('start-overlay').hidden = true;
+        startRenderLoop();
+        updateUI();
+        await acquireWakeLock();
+    } catch (error) {
+        errorElement.textContent = cameraError(error);
+        errorElement.hidden = false;
+    } finally {
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-demo').disabled = false;
     }
+}
 
-    // Attach Sensor Listeners
-    window.addEventListener('deviceorientation', handleOrientation, true);
-    if ('ondeviceorientationabsolute' in window) {
-        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+document.getElementById('btn-start').addEventListener('click', () => activateApp(false));
+document.getElementById('btn-demo').addEventListener('click', () => activateApp(true));
+
+document.addEventListener('visibilitychange', () => {
+    const s = window.state;
+    if (document.hidden) {
+        if (s.isRecording) {
+            stopRecording();
+            showToast('A gravação foi encerrada ao sair do app. Seu vídeo está disponível para salvar.');
+        }
+        releaseWakeLock();
+    } else if (s.started) {
+        resetSensorFilter();
+        acquireWakeLock();
+        if (!s.demo && (!s.currentStream || s.currentStream.getVideoTracks()[0]?.readyState === 'ended')) {
+            startCamera(s.currentDeviceId).catch(error => showToast(cameraError(error)));
+        } else if (!s.demo) video.play().catch(() => showToast('Toque na câmera para retomar a visualização.'));
     }
-    window.addEventListener('devicemotion', handleMotion, true);
+});
 
-    // Initial state sync from UI
-    window.state.isHorizonLockActive = horizonToggle.checked;
-    window.state.zoomFactor = parseFloat(zoomSlider.value);
-
-    // Hide overlay
-    startOverlay.style.opacity = '0';
-    setTimeout(() => {
-        startOverlay.style.display = 'none';
-        if (leveler) leveler.style.display = window.state.isHorizonLockActive ? 'flex' : 'none';
-    }, 500);
-
-    // Fetch cameras and start
-    await getCameras();
-    await startCamera();
-
-    // Start render loop
-    draw();
+window.addEventListener('beforeunload', event => {
+    if (window.state.isRecording || window.state.recordingBusy || window.state.outputBlob) {
+        event.preventDefault();
+        event.returnValue = '';
+    }
+});
+window.addEventListener('pagehide', () => {
+    if (window.state.isRecording) stopRecording();
+    stopRenderLoop();
+    stopSensors();
+    window.state.currentStream?.getTracks().forEach(track => track.stop());
+    releaseWakeLock();
+});
+window.addEventListener('pageshow', event => {
+    if (event.persisted && window.state.started) {
+        startSensors();
+        startRenderLoop();
+        if (!window.state.demo) startCamera(window.state.currentDeviceId).catch(error => showToast(cameraError(error)));
+    }
 });

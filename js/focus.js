@@ -1,146 +1,92 @@
-// ============================================================
-// focus.js — Touch-to-focus and AE/AF lock mechanism
-// ============================================================
+'use strict';
 
-// Touch to focus mechanism (Tap & Hold for AE/AF Lock)
-let touchTimer = null;
-let isFocusedLocked = false;
-let touchStartX = 0;
-let touchStartY = 0;
-let continuousFocusTimeout = null;
+window.focusLocked = false;
+let focusTimer = null, focusRestoreTimer = null, focusFadeTimer = null, pointerOrigin = null;
+let focusGeneration = 0;
 
-function clearFocusTimers() {
-    if (touchTimer) clearTimeout(touchTimer);
-    if (continuousFocusTimeout) clearTimeout(continuousFocusTimeout);
+function resetFocus() {
+    focusGeneration++;
+    clearTimeout(focusTimer); clearTimeout(focusRestoreTimer); clearTimeout(focusFadeTimer);
+    focusTimer = focusRestoreTimer = focusFadeTimer = null;
+    pointerOrigin = null;
+    window.focusLocked = false;
+    const point = document.getElementById('focus-point');
+    point.hidden = true;
+    point.classList.remove('locked');
 }
 
-async function triggerFocus(x, y, clientX, clientY, isLongPress) {
-    if (!currentStream) return;
-    const track = currentStream.getVideoTracks()[0];
-    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-
-    clearFocusTimers();
-
-    // Setup UI Square (using new rounded reticle)
-    focusPointUI.style.left = `${clientX}px`;
-    focusPointUI.style.top = `${clientY}px`;
-    focusPointUI.classList.remove('fade-out');
-    focusPointUI.classList.add('active');
-
-    // Remove the legacy square's pulse class usage if it was there
-    focusSquare.style.display = 'none';
-
-    if (isLongPress) {
-        // AE/AF Lock Mode
-        isFocusedLocked = true;
-        // Add an explicit text lock indicator if needed, or simply style the reticle
-        focusPointUI.style.borderColor = '#FFA500'; // Orange for locked
-    } else {
-        // Temporary AF Mode
-        focusPointUI.style.borderColor = 'rgba(255, 255, 255, 0.8)'; // Revert to white
-        continuousFocusTimeout = setTimeout(() => {
-            if (!isFocusedLocked) {
-                focusPointUI.classList.add('fade-out');
-                setTimeout(() => focusPointUI.classList.remove('active'), 200);
-            }
-        }, 1500);
+async function triggerFocus(clientX, clientY, lock) {
+    const s = window.state, track = s.currentStream?.getVideoTracks()[0];
+    if (!track || s.demo || !s.frameTransform) return;
+    const caps = s.capabilities;
+    if (!caps.pointsOfInterest || !caps.focusMode?.some(mode => ['single-shot', 'continuous'].includes(mode))) {
+        showToast('Esta câmera não oferece foco por toque no navegador.');
+        return;
     }
-
-    // Send hardware constraint if supported
-    let options = { advanced: [{}] };
-    let hasCapability = false;
-
-    if (capabilities.focusMode && capabilities.focusMode.includes('single-shot')) {
-        options.advanced[0].focusMode = 'single-shot';
-        options.advanced[0].pointsOfInterest = [{ x: x, y: y }];
-        hasCapability = true;
+    if (lock && !caps.focusMode.includes('manual')) {
+        showToast('O bloqueio de foco não está disponível nesta câmera.');
+        return;
     }
-
-    // Bind Exposure checking to the same coordinate (User Request: autoexposicao/luz no rosto)
-    if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
-        options.advanced[0].exposureMode = 'continuous';
-        options.advanced[0].pointsOfInterest = [{ x: x, y: y }];
-        hasCapability = true;
-    }
-
-    if (hasCapability && track.applyConstraints) {
-        try {
-            await track.applyConstraints(options);
-
-            if (isLongPress) {
-                camDebugInfo.innerHTML += ` | LOCK: [${x.toFixed(1)},${y.toFixed(1)}]`;
-            } else {
-                camDebugInfo.innerHTML += ` | AE+AF: [${x.toFixed(1)},${y.toFixed(1)}]`;
-                // Auto-unlock after 3 seconds for quick taps
-                continuousFocusTimeout = setTimeout(() => {
-                    if (!isFocusedLocked) {
-                        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-                        camDebugInfo.innerHTML += ` | AF-C`;
-                    }
-                }, 3000);
-            }
-        } catch (err) {
-            console.warn('Touch focus failed:', err);
-        }
-    }
-}
-
-canvas.addEventListener('pointerdown', (e) => {
     const rect = canvas.getBoundingClientRect();
-    const relX = (e.clientX - rect.left) / rect.width;
-    const relY = (e.clientY - rect.top) / rect.height;
-    touchStartX = e.clientX;
-    touchStartY = e.clientY;
-
-    // If already locked, a quick tap anywhere unlocks it immediately
-    if (isFocusedLocked) {
-        isFocusedLocked = false;
-        focusPointUI.classList.add('fade-out');
-        setTimeout(() => focusPointUI.classList.remove('active'), 200);
-        focusPointUI.style.borderColor = 'rgba(255, 255, 255, 0.8)';
-        clearFocusTimers();
-
-        if (currentStream && currentStream.getVideoTracks()[0].applyConstraints) {
-            try {
-                currentStream.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-                camDebugInfo.innerHTML += ` | UNLOCK`;
-            } catch (e) { }
+    const x = (clientX - rect.left) * canvas.width / rect.width;
+    const y = (clientY - rect.top) * canvas.height / rect.height;
+    const frame = s.previewFrame;
+    if (!frame || x < frame.x || x > frame.x + frame.width || y < frame.y || y > frame.y + frame.height) return;
+    const [sourceW, sourceH] = sourceDimensions();
+    const position = HorizonMath.sourcePoint(x, y, sourceW, sourceH, s.frameTransform);
+    resetFocus();
+    const generation = focusGeneration;
+    try {
+        const mode = caps.focusMode.includes('single-shot') ? 'single-shot' : 'continuous';
+        await track.applyConstraints({ advanced: [{ focusMode: mode, pointsOfInterest: [position] }] });
+        if (generation !== focusGeneration || track !== s.currentStream?.getVideoTracks()[0]) return;
+        if (lock) {
+            // Give AF time to settle, then hold its actual focus distance.
+            await new Promise(resolve => setTimeout(resolve, 400));
+            if (generation !== focusGeneration || track.readyState !== 'live') return;
+            const settings = track.getSettings();
+            const desired = { focusMode: 'manual' };
+            if (caps.focusDistance && Number.isFinite(settings.focusDistance)) desired.focusDistance = settings.focusDistance;
+            await track.applyConstraints({ advanced: [desired] });
+            window.focusLocked = true;
+            showToast('Foco bloqueado. Toque novamente para liberar.');
         }
-        return; // Wait for next interaction
-    }
-
-    // Start holding timer
-    touchTimer = setTimeout(() => {
-        // Trigger Long Press
-        triggerFocus(relX, relY, e.clientX, e.clientY, true);
-        touchTimer = null; // Mark as fired
-    }, 600); // 600ms hold required
-});
-
-canvas.addEventListener('pointerup', (e) => {
-    if (touchTimer) {
-        // Fired before 600ms expired = Quick Tap
-        clearTimeout(touchTimer);
-        touchTimer = null;
-
-        if (!isFocusedLocked) { // Prevent quick tap trigger immediately after unlocking
-            const rect = canvas.getBoundingClientRect();
-            const relX = (e.clientX - rect.left) / rect.width;
-            const relY = (e.clientY - rect.top) / rect.height;
-            triggerFocus(relX, relY, e.clientX, e.clientY, false);
+        const point = document.getElementById('focus-point');
+        point.hidden = false;
+        point.style.left = `${clientX - rect.left}px`; point.style.top = `${clientY - rect.top}px`;
+        point.classList.toggle('locked', lock);
+        if (!lock) {
+            focusFadeTimer = setTimeout(() => { point.hidden = true; }, 1800);
+            focusRestoreTimer = setTimeout(() => {
+                if (generation === focusGeneration && track.readyState === 'live') applyManualSettings();
+            }, 2500);
         }
+    } catch (_) {
+        showToast('Não foi possível ajustar o foco nesta câmera.');
+    }
+}
+
+canvas.addEventListener('pointerdown', event => {
+    if (!window.state.started || window.state.demo || window.state.cameraBusy) return;
+    if (window.focusLocked) {
+        resetFocus(); applyManualSettings(); showToast('Foco automático ativado.'); return;
+    }
+    pointerOrigin = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    canvas.setPointerCapture?.(event.pointerId);
+    focusTimer = setTimeout(() => {
+        focusTimer = null; pointerOrigin = null;
+        triggerFocus(event.clientX, event.clientY, true);
+    }, 600);
+});
+canvas.addEventListener('pointerup', event => {
+    if (focusTimer && pointerOrigin?.id === event.pointerId) {
+        clearTimeout(focusTimer); focusTimer = null; pointerOrigin = null;
+        triggerFocus(event.clientX, event.clientY, false);
     }
 });
-
-// Cancel long press if user moves finger drastically or touch is cancelled
-canvas.addEventListener('pointermove', (e) => {
-    if (touchTimer) {
-        const dist = Math.abs(e.clientX - touchStartX) + Math.abs(e.clientY - touchStartY);
-        if (dist > 20) {
-            clearTimeout(touchTimer);
-            touchTimer = null;
-        }
+canvas.addEventListener('pointermove', event => {
+    if (pointerOrigin && Math.hypot(event.clientX - pointerOrigin.x, event.clientY - pointerOrigin.y) > 15) {
+        clearTimeout(focusTimer); focusTimer = null; pointerOrigin = null;
     }
 });
-
-canvas.addEventListener('pointercancel', () => clearTimeout(touchTimer));
+canvas.addEventListener('pointercancel', () => { clearTimeout(focusTimer); focusTimer = null; pointerOrigin = null; });

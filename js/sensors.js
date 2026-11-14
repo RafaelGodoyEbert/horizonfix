@@ -1,132 +1,134 @@
-// ============================================================
-// sensors.js — Rotation Math (v4.0)
-// ============================================================
+'use strict';
 
-/**
- * ARCHITECTURE v4.0:
- * 1. Circular Buffer: Stores last 100 sensor readings with hardware timestamps.
- * 2. Interpolation: Precise angle lookup for camera frame timestamps (No Lag).
- * 3. Angular Velocity: Tracks rotation speed for adaptive filtering.
- */
-
-let hasValidMotionData = false;
-
-// Circular Buffer (100 samples ~ 0.5s at 200Hz)
-const SENSOR_HISTORY_SIZE = 100;
 const sensorHistory = [];
-let historyIdx = 0;
+let sensorsAttached = false;
+let orientationLastTime = -Infinity;
+let motionLastTime = 0;
+let filterLastTime = 0;
+let rawRoll = 0;
+let gimbalX = 0, gimbalY = 0, gimbalVX = 0, gimbalVY = 0;
+let desiredX = 0, desiredY = 0;
 
-// Adaptative state
-let lastRawRoll = 0;
-let lastTimestamp = 0;
+const screenAngle = () => screen.orientation?.angle ?? window.orientation ?? 0;
 
-function applyRoll(rawRoll, timestamp) {
-    // ── 1. Update Angular Velocity (for adaptive filter)
-    if (lastTimestamp > 0) {
-        const dt = (timestamp - lastTimestamp) / 1000;
-        if (dt > 0) {
-            let diff = rawRoll - lastRawRoll;
-            while (diff < -180) diff += 360;
-            while (diff > 180) diff -= 360;
-            const velocity = Math.abs(diff / dt);
-            // Smooth velocity a bit
-            window.state.angularVelocity = (window.state.angularVelocity || 0) * 0.8 + velocity * 0.2;
-        }
+async function requestSensors() {
+    const types = [window.DeviceOrientationEvent, window.DeviceMotionEvent];
+    const requests = types.map(type => {
+        try { return typeof type?.requestPermission === 'function' ? type.requestPermission() : Promise.resolve('granted'); }
+        catch (_) { return Promise.resolve('denied'); }
+    });
+    const results = await Promise.allSettled(requests);
+    if (results.some(result => result.status === 'rejected' || result.value === 'denied')) {
+        showToast('Sensores não autorizados. A câmera funciona; ative movimento e orientação nas permissões para nivelar.');
     }
-    lastRawRoll = rawRoll;
-    lastTimestamp = timestamp;
-
-    // ── 2. Push to Circular Buffer
-    const entry = { t: timestamp, r: rawRoll };
-    if (sensorHistory.length < SENSOR_HISTORY_SIZE) {
-        sensorHistory.push(entry);
-    } else {
-        sensorHistory[historyIdx] = entry;
-        historyIdx = (historyIdx + 1) % SENSOR_HISTORY_SIZE;
-    }
-
-    // Set targetRoll to latest for fallback
-    window.state.targetRoll = rawRoll;
+    startSensors();
 }
 
-/**
- * Finds the exact interpolated angle for a given timestamp.
- */
-function getInterpolatedRoll(targetT) {
-    if (sensorHistory.length < 2) return window.state.targetRoll || 0;
-
-    let newer = null;
-    let older = null;
-
-    for (let i = 0; i < sensorHistory.length; i++) {
-        let idx = (historyIdx - 1 - i + SENSOR_HISTORY_SIZE) % SENSOR_HISTORY_SIZE;
-        let entry = sensorHistory[idx];
-        if (!entry) continue;
-
-        if (entry.t >= targetT) {
-            newer = entry;
-        } else {
-            older = entry;
-            break;
-        }
-    }
-
-    if (!newer) return sensorHistory[(historyIdx - 1 + SENSOR_HISTORY_SIZE) % SENSOR_HISTORY_SIZE].r;
-    if (!older) return newer.r;
-
-    const tDiff = newer.t - older.t;
-    if (tDiff <= 0) return newer.r;
-
-    const alpha = (targetT - older.t) / tDiff;
-    
-    let diff = newer.r - older.r;
-    while (diff < -180) diff += 360;
-    while (diff > 180) diff -= 360;
-
-    return older.r + diff * alpha;
+function startSensors() {
+    if (sensorsAttached) return;
+    sensorsAttached = true;
+    window.addEventListener('deviceorientation', handleOrientation);
+    window.addEventListener('devicemotion', handleMotion);
+    screen.orientation?.addEventListener('change', resetSensorFilter);
+    window.addEventListener('orientationchange', resetSensorFilter);
 }
 
-function handleMotion(event) {
-    if (!event.accelerationIncludingGravity) return;
+function stopSensors() {
+    sensorsAttached = false;
+    window.removeEventListener('deviceorientation', handleOrientation);
+    window.removeEventListener('devicemotion', handleMotion);
+    screen.orientation?.removeEventListener('change', resetSensorFilter);
+    window.removeEventListener('orientationchange', resetSensorFilter);
+    resetSensorFilter();
+}
 
-    const ax = event.accelerationIncludingGravity.x || 0;
-    const ay = event.accelerationIncludingGravity.y || 0;
+function resetSensorFilter() {
+    sensorHistory.length = 0;
+    motionLastTime = filterLastTime = 0;
+    orientationLastTime = -Infinity;
+    gimbalX = gimbalY = gimbalVX = gimbalVY = desiredX = desiredY = 0;
+    window.state.offsetX = window.state.offsetY = 0;
+}
 
-    if (Math.abs(ax) < 0.05 && Math.abs(ay) < 0.05) return;
-
-    hasValidMotionData = true;
-
-    let roll = Math.atan2(ax, ay) * 180 / Math.PI;
-    if (isNaN(roll)) return;
-
-    let orientation = screen.orientation?.angle ?? window.orientation ?? 0;
-    const timestamp = event.timeStamp || performance.now();
-    
-    applyRoll(-(roll - orientation), timestamp);
+function applyRoll(degrees, timestamp) {
+    if (!Number.isFinite(degrees) || !Number.isFinite(timestamp)) return;
+    const s = window.state;
+    const previous = sensorHistory[sensorHistory.length - 1];
+    if (previous && timestamp <= previous.t) return;
+    rawRoll = degrees;
+    if (previous) {
+        const velocity = Math.abs(HorizonMath.angle(degrees - previous.r) / ((timestamp - previous.t) / 1000));
+        s.angularVelocity += (velocity - s.angularVelocity) * 0.25;
+    }
+    sensorHistory.push({ t: timestamp, r: degrees });
+    if (sensorHistory.length > 256) sensorHistory.shift();
+    s.targetRoll = degrees;
+    s.sensorLastTime = timestamp;
+    s.sensorMessage = 'Horizonte ativo';
 }
 
 function handleOrientation(event) {
-    if (hasValidMotionData) return;
-    if (event.beta === null || event.gamma === null) return;
-
-    const b = (event.beta || 0) * Math.PI / 180;
-    const g = (event.gamma || 0) * Math.PI / 180;
-
-    const x = Math.sin(g) * Math.cos(b);
-    const y = Math.sin(b);
-
-    let roll = Math.atan2(x, y) * 180 / Math.PI;
-    if (isNaN(roll)) return;
-
-    let orientation = screen.orientation?.angle ?? window.orientation ?? 0;
-    const timestamp = event.timeStamp || performance.now();
-
-    applyRoll(-(roll - orientation), timestamp);
+    if (window.state.demo) return;
+    const now = performance.now();
+    const roll = HorizonMath.orientationRoll(event.beta, event.gamma, screenAngle());
+    if (roll === null) {
+        window.state.sensorMessage = 'Aponte a câmera para frente';
+        return;
+    }
+    orientationLastTime = now;
+    applyRoll(roll, now);
 }
 
-function lerpAngle(start, end, amt) {
-    let diff = end - start;
-    while (diff < -180) diff += 360;
-    while (diff > 180) diff -= 360;
-    return start + diff * amt;
+function handleMotion(event) {
+    const s = window.state;
+    if (s.demo) return;
+    const now = performance.now();
+    const dt = motionLastTime ? (now - motionLastTime) / 1000 : 0;
+    motionLastTime = now;
+    // Prefer fused orientation; raw acceleration also contains hand movement.
+    if (now - orientationLastTime > 500) {
+        const g = event.accelerationIncludingGravity, a = event.acceleration;
+        if (Number.isFinite(g?.x) && Number.isFinite(g?.y)) {
+            const x = g.x - (Number.isFinite(a?.x) ? a.x : 0);
+            const y = g.y - (Number.isFinite(a?.y) ? a.y : 0);
+            if (Math.hypot(x, y) > 0.8) applyRoll(HorizonMath.angle(-Math.atan2(x, y) * 180 / Math.PI + screenAngle()), now);
+        }
+    }
+    if (!s.steady || !dt || dt > 0.2) return;
+    // MotionEvent rates are deg/s. Leaky integration prevents indefinite drift.
+    const rate = event.rotationRate;
+    const pitch = Number.isFinite(rate?.beta) ? rate.beta * Math.PI / 180 : 0;
+    const yaw = Number.isFinite(rate?.gamma) ? rate.gamma * Math.PI / 180 : 0;
+    const rad = (rawRoll - s.calibration) * Math.PI / 180;
+    const c = Math.cos(rad), n = Math.sin(rad), decay = Math.exp(-dt / 0.25);
+    desiredX = HorizonMath.clamp((desiredX + (yaw * c + pitch * n) * dt * 2) * decay, -1, 1);
+    desiredY = HorizonMath.clamp((desiredY + (-pitch * c + yaw * n) * dt * 2) * decay, -1, 1);
+}
+
+function updateSensorFrame(now) {
+    const s = window.state;
+    const dt = filterLastTime ? Math.min(0.2, (now - filterLastTime) / 1000) : 1 / 30;
+    filterLastTime = now;
+    const target = s.demo ? -s.demoRoll : HorizonMath.sampleAt(sensorHistory, now - s.sensorDelay);
+    const calibrated = HorizonMath.angle(target - s.calibration);
+    const tau = 0.004 + (s.smoothing / 100 * 0.12) / (1 + s.angularVelocity / 100);
+    if (!sensorHistory.length && !s.demo) s.currentRoll = 0;
+    else s.currentRoll = HorizonMath.lerpAngle(s.currentRoll, calibrated, 1 - Math.exp(-dt / tau));
+    [gimbalX, gimbalVX] = HorizonMath.spring(gimbalX, gimbalVX, desiredX, dt);
+    [gimbalY, gimbalVY] = HorizonMath.spring(gimbalY, gimbalVY, desiredY, dt);
+    s.offsetX = s.steady && s.isHorizonLockActive ? gimbalX : 0;
+    s.offsetY = s.steady && s.isHorizonLockActive ? gimbalY : 0;
+    if (!s.demo && now - s.sensorLastTime > 1500) s.sensorMessage = 'Sem sensores • câmera disponível';
+}
+
+function calibrateHorizon() {
+    const s = window.state;
+    if (!s.demo && performance.now() - s.sensorLastTime > 1500) {
+        showToast('Nenhum sensor de orientação disponível para calibrar.');
+        return;
+    }
+    s.calibration = s.demo ? -s.demoRoll : rawRoll;
+    s.currentRoll = 0;
+    resetSensorFilter();
+    showToast('Horizonte centralizado. Esta posição agora é o nível de referência.');
 }
