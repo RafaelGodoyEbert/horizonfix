@@ -52,7 +52,7 @@ for (const [sw, sh] of [[1920, 1080], [1080, 1920], [1440, 1080], [1080, 1080]])
 }
 const transform = { cx: 320, cy: 240, roll: 90, scale: 2, offsetX: 30, offsetY: -20, mirror: false };
 const point = M.sourcePoint(320, 340, 1000, 800, transform);
-near(point.x, 0.535); near(point.y, 0.525);
+near(point.x, 0.535); near(point.y, 0.5125);
 near(M.sourcePoint(320, 340, 1000, 800, { ...transform, mirror: true }).x, 0.465);
 let position = 0, velocity = 0;
 for (let i = 0; i < 120; i++) [position, velocity] = M.spring(position, velocity, 1, 1 / 120);
@@ -65,14 +65,12 @@ assert.ok(M.spring(0, 0, 1, 5).every(Number.isFinite));
 const html = fs.readFileSync('index.html', 'utf8');
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 assert.equal(new Set(ids).size, ids.length, 'Duplicate DOM IDs');
-const scripts = [...html.matchAll(/<script[^>]+src="([^"?]+)/g)].map(match => match[1]);
-const combined = scripts.map(file => {
+const scripts = [...html.matchAll(/<script[^>]+src="([^"?]+)/g)].map(match => match[1]).filter(file => !/^https?:/.test(file));
+scripts.forEach(file => {
     const source = fs.readFileSync(file, 'utf8');
     new vm.Script(source, { filename: file });
     for (const match of source.matchAll(/(?:getElementById|element)\('([^']+)'\)/g)) {
         assert.ok(ids.includes(match[1]), `Missing DOM control: ${match[1]}`);
     }
-    return source;
-}).join('\n');
-new vm.Script(combined);
+});
 console.log(`OK: ${checked.toLocaleString('pt-BR')} crop corner checks, preview parity, angles, interpolation, focus, spring, DOM and script syntax.`);

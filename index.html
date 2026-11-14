@@ -1,171 +1,65 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Horizonte Fixo | ULTRA v4.0</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css?v=4.0">
-
-    <!-- Video Duration Fixer -->
-    <script src="https://cdn.jsdelivr.net/npm/webm-duration-fix@1.0.4/lib/index.js"></script>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080c10"><title>Horizonte Fixo</title>
+<link rel="stylesheet" href="css/styles.css">
 </head>
-
 <body>
-
-    <video id="video-source" playsinline autoplay muted></video>
-    <canvas id="viewfinder"></canvas>
-
-    <div id="ui-layer">
-        <div id="focus-point" class="focus-point"></div>
-        <div class="top-bar">
-            <div class="status-badge">
-                <div class="indicator-dot" id="sensor-dot"></div>
-                <span id="angle-text">0.0°</span>
-            </div>
-
-            <!-- DEBUG INFO -->
-            <div style="font-size: 9px; color: #0f0; background: rgba(0,0,0,0.6); padding: 5px; position: absolute; left: 10px; top: 10px; z-index: 1000; pointer-events: none; border-radius: 4px;"
-                id="debug-info">
-                ULTRA v4.0 Caching...
-            </div>
-            <!-- CAM DEBUG INFO -->
-            <div style="font-size: 9px; color: #ff0; background: rgba(0,0,0,0.6); padding: 5px; position: absolute; left: 10px; top: 40px; z-index: 1000; pointer-events: none; border-radius: 4px;"
-                id="cam-debug-info">
-                Cam Check...
-            </div>
-
-            <div style="display: flex; gap: 10px;">
-                <!-- Aspect Ratio Toggle -->
-                <button id="btn-aspect-toggle"
-                    style="width: 48px; height: 48px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto; color: white; transition: all 0.2s;">
-                    <div style="display: flex; flex-direction: column; align-items: center;">
-                        <span id="aspect-label" style="font-size: 8px; font-weight: bold;">16:9</span>
-                        <div id="aspect-icon" style="width: 14px; height: 10px; border: 1.5px solid white; margin-top: 2px;"></div>
-                    </div>
-                </button>
-
-                <!-- Camera Switch -->
-                <button id="btn-flip-camera"
-                    style="width: 48px; height: 48px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; cursor: pointer; pointer-events: auto;">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 12A9 9 0 0 0 6 5.3L3 8" />
-                        <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <div class="recording-time" id="recording-time">
-            <div class="indicator-dot-recording"></div>
-            <span id="time-display">00:00</span>
-        </div>
-
-        <div class="leveler-container" id="leveler">
-            <div class="leveler-line-horizontal"></div>
-            <div class="leveler-line-vertical"></div>
-            <div class="horizon-line" id="horizon-line"></div>
-        </div>
-
-        <div id="focus-square"></div>
-
-        <button id="settings-toggle">⚙️</button>
-
-        <div class="controls-panel" id="controls-panel">
-            <div class="control-card">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-                    <div class="control-label">Zoom Digital</div>
-                    <div class="control-value" id="zoom-val">1.0x</div>
-                </div>
-                <input type="range" id="zoom-slider" min="0.5" max="3.0" step="0.1" value="1.0">
-            </div>
-
-            <!-- Shutter -->
-            <div class="control-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div class="control-label">Shutter Speed</div>
-                    <label class="switch">
-                        <input type="checkbox" id="shutter-toggle">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div class="control-value" id="shutter-val">Auto</div>
-                    <input type="range" id="shutter-slider" min="1" max="1000" step="1" value="120" disabled style="width: 60%;">
-                </div>
-            </div>
-
-            <!-- ISO -->
-            <div class="control-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div class="control-label">ISO</div>
-                    <label class="switch">
-                        <input type="checkbox" id="iso-toggle">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div class="control-value" id="iso-val">Auto</div>
-                    <input type="range" id="iso-slider" min="50" max="3200" step="10" value="800" disabled style="width: 60%;">
-                </div>
-            </div>
-
-            <!-- Horizon Lock -->
-            <div class="control-card" style="display: flex; justify-content: space-between; align-items: center;">
-                <div class="control-label">Horizon Lock (v4.0)</div>
-                <label class="switch">
-                    <input type="checkbox" id="horizon-toggle" checked>
-                    <span class="slider"></span>
-                </label>
-            </div>
-
-            <!-- Hardware OIS -->
-            <div class="control-card" style="display: flex; justify-content: space-between; align-items: center;">
-                <div class="control-label">OIS Mecânico</div>
-                <label class="switch">
-                    <input type="checkbox" id="ois-toggle">
-                    <span class="slider"></span>
-                </label>
-            </div>
-        </div>
-
-        <div class="bottom-controls">
-            <button class="btn-record" id="btn-record">
-                <div class="record-inner"></div>
-            </button>
-        </div>
+<main id="app">
+  <section id="preview-stage" aria-label="Visor da câmera">
+    <video id="video-source" playsinline muted></video><canvas id="viewfinder"></canvas>
+    <div id="focus-point" hidden aria-hidden="true"></div>
+    <header class="topbar">
+      <div class="status"><span id="sensor-dot" class="dot"></span><strong id="angle-text">0,0°</strong><small id="sensor-status">Aguardando sensores</small></div>
+      <div class="top-actions">
+        <button id="btn-torch" type="button" aria-label="Lanterna" title="Lanterna">☀</button>
+        <button id="btn-aspect-toggle" type="button" data-lock-recording aria-label="Alterar formato"><span id="aspect-label">16:9</span></button>
+        <button id="btn-flip-camera" type="button" data-lock-recording aria-label="Trocar câmera" title="Trocar câmera">↻</button>
+        <button id="btn-fullscreen" type="button" aria-label="Tela cheia" title="Tela cheia">⛶</button>
+      </div>
+    </header>
+    <p id="camera-status" class="camera-status" role="status">Câmera ainda não ativada</p>
+    <div id="recording-time" class="recording-time" hidden><i></i><span id="time-display">00:00</span></div>
+    <div id="demo-controls" class="demo-controls" hidden>
+      <label>Inclinação <output id="demo-roll-val">0°</output><input id="demo-roll" type="range" min="-180" max="180" value="0"></label>
+      <button id="btn-use-camera" type="button">Usar câmera</button>
     </div>
-
-    <!-- Initialization Screen -->
-    <div class="overlay-start" id="start-overlay">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="url(#gradient)" stroke-width="1.5" style="margin-bottom: 20px;">
-            <defs>
-                <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="#00f2fe" />
-                    <stop offset="100%" stop-color="#4facfe" />
-                </linearGradient>
-            </defs>
-            <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-            <circle cx="12" cy="13" r="3" />
-        </svg>
-
-        <h1>Horizonte Fixo v4.0</h1>
-        <p class="desc">Replicação da funcionalidade de estabilização extrema de vídeo em tempo real no navegador.</p>
-
-        <button class="btn-primary" id="btn-start">
-            Ativar Sistema (v4.0)
-        </button>
+    <div class="bottom-actions">
+      <button id="btn-calibrate" type="button" data-lock-recording>Calibrar horizonte</button>
+      <button id="settings-toggle" type="button" data-lock-recording aria-expanded="false" aria-controls="controls-panel">Ajustes</button>
+      <button id="btn-record" type="button" aria-label="Gravar vídeo"><span></span></button>
     </div>
-
-    <script src="js/app.js?v=4.0"></script>
-    <script src="js/ui.js?v=4.0"></script>
-    <script src="js/sensors.js?v=4.0"></script>
-    <script src="js/focus.js?v=4.0"></script>
-    <script src="js/camera.js?v=4.0"></script>
-    <script src="js/recording.js?v=4.0"></script>
-    <script src="js/renderer.js?v=4.0"></script>
-</body>
-
-</html>
+  </section>
+  <aside id="controls-panel" hidden aria-label="Ajustes da câmera">
+    <header><h2>Ajustes</h2><button id="btn-close-settings" type="button" aria-label="Fechar ajustes">×</button></header>
+    <div class="control"><label for="camera-select">Câmera</label><select id="camera-select" data-lock-recording><option>Ative a câmera primeiro</option></select></div>
+    <div class="twocol">
+      <div class="control"><label for="resolution-select">Qualidade</label><select id="resolution-select" data-lock-recording><option value="720">HD (720p)</option><option value="1080" selected>FHD (1080p)</option><option value="2160">UHD (4K)</option></select></div>
+      <div class="control"><label for="fps-select">Quadros</label><select id="fps-select" data-lock-recording><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></div>
+    </div>
+    <div class="control"><label for="zoom-slider">Zoom / recorte <output id="zoom-val">1,0×</output></label><input id="zoom-slider" data-lock-recording type="range" min="1" max="3" step=".1" value="1"></div>
+    <div class="twocol">
+      <div class="control"><label for="crop-mode">Enquadramento</label><select id="crop-mode" data-lock-recording><option value="fixed">Fixo</option><option value="adaptive">Adaptável</option></select></div>
+      <div class="control"><label for="color-profile">Cor</label><select id="color-profile" data-lock-recording><option value="original">Original</option><option value="flat">Flat SDR</option><option value="punchy">Viva</option></select></div>
+    </div>
+    <div class="control"><label for="smoothing-slider">Suavização <output id="smoothing-val">30%</output></label><input id="smoothing-slider" data-lock-recording type="range" min="0" max="100" value="30"></div>
+    <div class="control"><label for="delay-slider">Atraso do sensor <output id="delay-val">55 ms</output></label><input id="delay-slider" data-lock-recording type="range" min="0" max="180" value="55"></div>
+    <div class="toggle"><span><strong>Horizonte travado</strong><small>Nivela a imagem com os sensores</small></span><input id="horizon-toggle" data-lock-recording type="checkbox" checked></div>
+    <div class="toggle"><span><strong>Super Steady</strong><small>Compensa movimentos de inclinação</small></span><input id="steady-toggle" data-lock-recording type="checkbox" checked></div>
+    <div class="toggle"><span><strong>Áudio</strong><small>Solicita microfone ao gravar</small></span><input id="audio-toggle" data-lock-recording type="checkbox" checked></div>
+    <div class="toggle"><span><strong>Grade</strong><small>Somente no visor</small></span><input id="grid-toggle" data-lock-recording type="checkbox"></div>
+    <section id="exposure-control" class="control"><label for="exposure-slider">Exposição <output id="exposure-val">0,0 EV</output></label><input id="exposure-slider" data-lock-recording type="range"></section>
+    <section id="iso-control" class="manual"><div class="toggle"><span><strong>ISO manual</strong></span><input id="iso-toggle" data-lock-recording type="checkbox"></div><label for="iso-slider">ISO <output id="iso-val">Auto</output></label><input id="iso-slider" data-lock-recording type="range"></section>
+    <section id="shutter-control" class="manual"><div class="toggle"><span><strong>Obturador manual</strong></span><input id="shutter-toggle" data-lock-recording type="checkbox"></div><label for="shutter-slider">Obturador <output id="shutter-val">Auto</output></label><input id="shutter-slider" data-lock-recording type="range"></section>
+    <div class="toggle unavailable"><span><strong>OIS mecânico</strong><small id="ois-note">Verificando suporte…</small></span><input id="ois-toggle" type="checkbox"></div>
+    <p class="note">A qualidade efetiva e os controles avançados dependem da câmera e do navegador.</p>
+  </aside>
+</main>
+<section id="start-overlay" class="overlay">
+  <div class="start-card"><div class="mark">◒</div><h1>Horizonte Fixo</h1><p>Grave com o horizonte nivelado e uma moldura estável, direto no navegador.</p><button id="btn-start" type="button">Ativar câmera</button><button id="btn-demo" class="secondary" type="button">Abrir demonstração</button><p id="start-error" class="error" role="alert" hidden></p><small>Use HTTPS ou localhost para câmera e sensores.</small></div>
+</section>
+<p id="toast" hidden role="status" aria-live="polite"></p>
+<dialog id="output-dialog"><button id="btn-close-output" class="dialog-close" type="button" aria-label="Fechar">×</button><h2>Vídeo pronto</h2><video id="output-video" controls playsinline></video><p id="output-info"></p><div class="output-actions"><a id="output-download" download>Baixar vídeo</a><button id="btn-share" type="button">Compartilhar</button></div></dialog>
+<script src="js/math.js"></script><script src="js/app.js"></script><script src="js/sensors.js"></script><script src="js/camera.js"></script><script src="js/renderer.js"></script><script src="js/focus.js"></script><script src="js/recording.js"></script><script src="js/ui.js"></script>
+</body></html>
