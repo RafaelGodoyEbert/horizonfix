@@ -21,14 +21,14 @@ function waitForCameraFrame() {
     return new Promise((resolve, reject) => {
         const finish = error => {
             clearTimeout(timeout);
-            video.removeEventListener('loadeddata', onReady);
+            video.removeEventListener('loadedmetadata', onReady);
             video.removeEventListener('error', onError);
             error ? reject(error) : resolve();
         };
         const onReady = () => finish();
         const onError = () => finish(new Error('Video playback failed'));
         const timeout = setTimeout(() => finish(Object.assign(new Error(), { name: 'AbortError' })), 12000);
-        video.addEventListener('loadeddata', onReady, { once: true });
+        video.addEventListener('loadedmetadata', onReady, { once: true });
         video.addEventListener('error', onError, { once: true });
     });
 }
@@ -45,8 +45,9 @@ async function openCamera(constraints) {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
         video.srcObject = stream;
+        const frameReady = waitForCameraFrame();
         await video.play();
-        await waitForCameraFrame();
+        await frameReady;
         return stream;
     } catch (error) {
         stream?.getTracks().forEach(track => track.stop());
